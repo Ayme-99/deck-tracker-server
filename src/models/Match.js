@@ -14,10 +14,26 @@ const matchSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  userPrizes: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 6
+  },
+  opponentPrizes: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 6
+  },
+  endReason: {
+    type: String,
+    enum: ['normal', 'concession', 'no_pokemon', 'time', 'deck_out'],
+    default: 'normal'
+  },
   result: {
     type: String,
-    enum: ['win', 'loss', 'tie'],
-    required: true
+    enum: ['win', 'loss', 'tie']
   },
   format: {
     type: String,
@@ -30,6 +46,18 @@ const matchSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+});
+
+// Calcula el resultado automáticamente antes de guardar
+matchSchema.pre('save', function(next) {
+  if (this.userPrizes > this.opponentPrizes) {
+    this.result = 'win'; // cogiste más premios que el rival = ganaste
+  } else if (this.userPrizes < this.opponentPrizes) {
+    this.result = 'loss';
+  } else {
+    this.result = 'tie';
+  }
+  next();
 });
 
 module.exports = mongoose.model('Match', matchSchema);
