@@ -13,6 +13,8 @@ API REST para gestión de mazos de Pokémon TCG y seguimiento de partidas, con e
 https://deck-tracker-server.onrender.com/api
 
 ## Estructura del proyecto
+
+```
 src/
 ├── app.js
 ├── config/
@@ -32,7 +34,8 @@ src/
 │   ├── matchRoutes.js
 │   └── statsRoutes.js
 └── middleware/
-└── authMiddleware.js
+    └── authMiddleware.js
+```
 
 ## Variables de entorno
 
