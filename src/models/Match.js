@@ -49,7 +49,7 @@ const matchSchema = new mongoose.Schema({
 });
 
 // Calcula el resultado automáticamente antes de guardar
-matchSchema.pre('save', function(next) {
+matchSchema.pre('save', function() {
   if (this.userPrizes > this.opponentPrizes) {
     this.result = 'win'; // cogiste más premios que el rival = ganaste
   } else if (this.userPrizes < this.opponentPrizes) {
@@ -57,7 +57,6 @@ matchSchema.pre('save', function(next) {
   } else {
     this.result = 'tie';
   }
-  next();
 });
 
 module.exports = mongoose.model('Match', matchSchema);
