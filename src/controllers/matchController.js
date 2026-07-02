@@ -2,7 +2,7 @@ const Match = require('../models/Match');
 
 exports.createMatch = async (req, res) => {
   try {
-    const match = new Match(req.body);
+    const match = new Match({ ...req.body, userId: req.userId });
     await match.save();
     res.status(201).json(match);
   } catch (error) {
@@ -12,8 +12,8 @@ exports.createMatch = async (req, res) => {
 
 exports.getMatches = async (req, res) => {
   try {
-    const { userId, deckId } = req.query;
-    const filter = { userId };
+    const { deckId } = req.query;
+    const filter = { userId: req.userId };
     if (deckId) filter.deckId = deckId;
     const matches = await Match.find(filter).sort({ playedAt: -1 });
     res.json(matches);
@@ -24,7 +24,7 @@ exports.getMatches = async (req, res) => {
 
 exports.getMatchById = async (req, res) => {
   try {
-    const match = await Match.findById(req.params.id);
+    const match = await Match.findOne({ _id: req.params.id, userId: req.userId });
     if (!match) return res.status(404).json({ error: 'Partida no encontrada' });
     res.json(match);
   } catch (error) {
@@ -34,11 +34,11 @@ exports.getMatchById = async (req, res) => {
 
 exports.updateMatch = async (req, res) => {
   try {
-    const match = await Match.findById(req.params.id);
+    const match = await Match.findOne({ _id: req.params.id, userId: req.userId });
     if (!match) return res.status(404).json({ error: 'Partida no encontrada' });
 
     Object.assign(match, req.body);
-    await match.save(); // usa save() en vez de findByIdAndUpdate para que se dispare el pre('save') y recalcule el result
+    await match.save();
 
     res.json(match);
   } catch (error) {
@@ -48,7 +48,7 @@ exports.updateMatch = async (req, res) => {
 
 exports.deleteMatch = async (req, res) => {
   try {
-    const match = await Match.findByIdAndDelete(req.params.id);
+    const match = await Match.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!match) return res.status(404).json({ error: 'Partida no encontrada' });
     res.json({ message: 'Partida eliminada correctamente' });
   } catch (error) {
@@ -56,17 +56,13 @@ exports.deleteMatch = async (req, res) => {
   }
 };
 
-// Sugerencias de autocompletado para "opponentDeck"
 exports.getOpponentSuggestions = async (req, res) => {
   try {
-    const { userId, q } = req.query;
-    if (!userId) return res.status(400).json({ error: 'userId es requerido' });
-
-    const filter = { userId };
+    const { q } = req.query;
+    const filter = { userId: req.userId };
     if (q) {
-      filter.opponentDeck = { $regex: '^' + q, $options: 'i' }; // insensible a mayúsculas
+      filter.opponentDeck = { $regex: '^' + q, $options: 'i' };
     }
-
     const suggestions = await Match.distinct('opponentDeck', filter);
     res.json(suggestions);
   } catch (error) {
