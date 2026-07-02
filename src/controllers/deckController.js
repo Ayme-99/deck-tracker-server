@@ -2,8 +2,27 @@ const Deck = require('../models/Deck');
 
 exports.getDecks = async (req, res) => {
   try {
-    const decks = await Deck.find({ userId: req.userId });
-    res.json(decks);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const [decks, total] = await Promise.all([
+      Deck.find({ userId: req.userId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Deck.countDocuments({ userId: req.userId })
+    ]);
+
+    res.json({
+      data: decks,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

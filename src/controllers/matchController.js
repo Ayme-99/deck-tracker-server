@@ -13,10 +13,30 @@ exports.createMatch = async (req, res) => {
 exports.getMatches = async (req, res) => {
   try {
     const { deckId } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
     const filter = { userId: req.userId };
     if (deckId) filter.deckId = deckId;
-    const matches = await Match.find(filter).sort({ playedAt: -1 });
-    res.json(matches);
+
+    const [matches, total] = await Promise.all([
+      Match.find(filter)
+        .sort({ playedAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Match.countDocuments(filter)
+    ]);
+
+    res.json({
+      data: matches,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
