@@ -22,6 +22,30 @@ exports.getMatches = async (req, res) => {
   }
 };
 
+exports.getMatchById = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ error: 'Partida no encontrada' });
+    res.json(match);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.updateMatch = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ error: 'Partida no encontrada' });
+
+    Object.assign(match, req.body);
+    await match.save(); // usa save() en vez de findByIdAndUpdate para que se dispare el pre('save') y recalcule el result
+
+    res.json(match);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
 exports.deleteMatch = async (req, res) => {
   try {
     const match = await Match.findByIdAndDelete(req.params.id);

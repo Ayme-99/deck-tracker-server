@@ -3,8 +3,10 @@ const router = express.Router();
 const matchController = require('../controllers/matchController');
 
 router.get('/', matchController.getMatches);
-router.get('/opponent-suggestions', matchController.getOpponentSuggestions); //⚠️ Importante: la ruta /opponent-suggestions tiene que ir antes de cualquier ruta tipo /:id si la añadieras después, porque si no Express intentaría interpretar "opponent-suggestions" como un ID. En este caso no tienes conflicto porque no hay GET /:id, pero es bueno tenerlo en cuenta para el futuro.
+router.get('/opponent-suggestions', matchController.getOpponentSuggestions); //⚠️ El orden aquí es crítico: /opponent-suggestions tiene que ir antes de /:id, porque si no, Express interpretaría "opponent-suggestions" como si fuera un id y nunca llegaría a esa ruta.
+router.get('/:id', matchController.getMatchById);
 router.post('/', matchController.createMatch);
+router.put('/:id', matchController.updateMatch);
 router.delete('/:id', matchController.deleteMatch);
 
 module.exports = router;
