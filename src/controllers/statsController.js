@@ -118,3 +118,94 @@ exports.getDeckStreak = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Estadísticas globales del usuario (todos sus mazos combinados)
+exports.getGlobalOverview = async (req, res) => {
+  try {
+    const stats = await Match.aggregate([
+      { $match: { userId: req.userId } },
+      {
+        $group: {
+          _id: null,
+          totalMatches: { $sum: 1 },
+          wins: { $sum: { $cond: [{ $eq: ['$result', 'win'] }, 1, 0] } },
+          losses: { $sum: { $cond: [{ $eq: ['$result', 'loss'] }, 1, 0] } },
+          ties: { $sum: { $cond: [{ $eq: ['$result', 'tie'] }, 1, 0] } },
+          totalUserPrizes: { $sum: '$userPrizes' },
+          totalOpponentPrizes: { $sum: '$opponentPrizes' }
+        }
+      }
+    ]);
+
+    if (stats.length === 0) {
+      return res.json({
+        totalMatches: 0,
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        winRate: 0,
+        totalUserPrizes: 0,
+        totalOpponentPrizes: 0
+      });
+    }
+
+    const result = stats[0];
+    delete result._id;
+    result.winRate = result.totalMatches > 0
+      ? Math.round((result.wins / result.totalMatches) * 1000) / 10
+      : 0;
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Ranking de mazos por win-rate (con mínimo de partidas para ser representativo)
+exports.getDeckRanking = async (req, res) => {
+  try {
+    const minMatches = parseInt(req.query.minMatches) || 3; // por defecto, al menos 3 partidas
+
+    const ranking = await Match.aggregate([
+      { $match: { userId: req.userId } },
+      {
+        $group: {
+          _id: '$deckId',
+          totalMatches: { $sum: 1 },
+          wins: { $sum: { $cond: [{ $eq: ['$result', 'win'] }, 1, 0] } },
+          losses: { $sum: { $cond: [{ $eq: ['$result', 'loss'] }, 1, 0] } },
+          ties: { $sum: { $cond: [{ $eq: ['$result', 'tie'] }, 1, 0] } }
+        }
+      },
+      { $match: { totalMatches: { $gte: minMatches } } },
+      {
+        $lookup: {
+          from: 'decks',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'deckInfo'
+        }
+      },
+      { $unwind: '$deckInfo' },
+      {
+        $project: {
+          _id: 0,
+          deckId: '$_id',
+          deckName: '$deckInfo.name',
+          totalMatches: 1,
+          wins: 1,
+          losses: 1,
+          ties: 1,
+          winRate: {
+            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+          }
+        }
+      },
+      { $sort: { winRate: -1 } }
+    ]);
+
+    res.json(ranking);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
