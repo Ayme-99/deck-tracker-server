@@ -16,7 +16,9 @@ exports.getDeckOverview = async (req, res) => {
           losses: { $sum: { $cond: [{ $eq: ['$result', 'loss'] }, 1, 0] } },
           ties: { $sum: { $cond: [{ $eq: ['$result', 'tie'] }, 1, 0] } },
           avgUserPrizes: { $avg: '$userPrizes' },
-          avgOpponentPrizes: { $avg: '$opponentPrizes' }
+          avgOpponentPrizes: { $avg: '$opponentPrizes' },
+          totalUserPrizes: { $sum: '$userPrizes' },
+          totalOpponentPrizes: { $sum: '$opponentPrizes' }
         }
       }
     ]);
@@ -29,14 +31,16 @@ exports.getDeckOverview = async (req, res) => {
         ties: 0,
         winRate: 0,
         avgUserPrizes: 0,
-        avgOpponentPrizes: 0
+        avgOpponentPrizes: 0,
+        totalUserPrizes: 0,
+        totalOpponentPrizes: 0
       });
     }
 
     const result = stats[0];
     delete result._id;
     result.winRate = result.totalMatches > 0
-      ? Math.round((result.wins / result.totalMatches) * 1000) / 10 // ej. 66.7%
+      ? Math.round((result.wins / result.totalMatches) * 1000) / 10
       : 0;
     result.avgUserPrizes = Math.round(result.avgUserPrizes * 10) / 10;
     result.avgOpponentPrizes = Math.round(result.avgOpponentPrizes * 10) / 10;
