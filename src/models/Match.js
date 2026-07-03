@@ -50,18 +50,22 @@ const matchSchema = new mongoose.Schema({
 
 // Calcula el resultado automáticamente antes de guardar
 matchSchema.pre('save', function() {
-  if (this.userPrizes !== this.opponentPrizes) {
-    // Los premios desempatan por sí solos
-    this.result = this.userPrizes > this.opponentPrizes ? 'win' : 'loss';
-  } else if (this.endReason === 'normal') {
-    // Empate real de premios en una partida que terminó de forma normal
-    this.result = 'tie';
+  if (this.endReason === 'normal') {
+    // Unico caso donde el marcador de premios determina el resultado por si solo
+    if (this.userPrizes > this.opponentPrizes) {
+      this.result = 'win';
+    } else if (this.userPrizes < this.opponentPrizes) {
+      this.result = 'loss';
+    } else {
+      this.result = 'tie';
+    }
   } else if (!this.result) {
-    // Premios empatados pero terminó por rendicion/sin pokemon/tiempo/etc:
-    // el resultado no se puede inferir solo, hace falta que venga explicito
-    throw new Error('Con premios empatados y un motivo de fin distinto de "normal", debes indicar el resultado manualmente (win/loss/tie)');
+    // Cualquier otro motivo (rendicion, sin pokemon, tiempo, deck-out) puede
+    // desconectar el resultado real del marcador de premios, asi que hace
+    // falta que venga indicado explicitamente
+    throw new Error('Con un motivo de fin distinto de "normal", debes indicar el resultado manualmente (win/loss/tie)');
   }
-  // Si this.result ya viene informado (caso de empate de premios + motivo no normal), se respeta tal cual
+  // Si this.result ya viene informado, se respeta tal cual
 });
 
 module.exports = mongoose.model('Match', matchSchema);
