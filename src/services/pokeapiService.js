@@ -1,6 +1,6 @@
 const POKEAPI_BASE = 'https://pokeapi.co/api/v2';
 
-let speciesCache = null; // array de nombres, cacheado en memoria tras la primera peticion
+let speciesCache = null;
 let speciesCacheTimestamp = null;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
 
@@ -8,11 +8,17 @@ async function getAllSpeciesNames() {
   const isCacheValid = speciesCache && (Date.now() - speciesCacheTimestamp < CACHE_TTL_MS);
   if (isCacheValid) return speciesCache;
 
-  const response = await fetch(`${POKEAPI_BASE}/pokemon-species?limit=2000`);
-  if (!response.ok) throw new Error('No se pudo obtener la lista de especies de PokeAPI');
+  // Primero pedimos el count total (limit=1 es barato, solo para saber cuantos hay)
+  const countResponse = await fetch(`${POKEAPI_BASE}/pokemon?limit=1`);
+  if (!countResponse.ok) throw new Error('No se pudo obtener el conteo de PokeAPI');
+  const { count } = await countResponse.json();
+
+  // Ahora pedimos la lista completa (incluye especies base + formas: megas, regionales, etc.)
+  const response = await fetch(`${POKEAPI_BASE}/pokemon?limit=${count}`);
+  if (!response.ok) throw new Error('No se pudo obtener la lista de PokeAPI');
 
   const data = await response.json();
-  speciesCache = data.results.map((s) => s.name); // ej. ['bulbasaur', 'ivysaur', ...]
+  speciesCache = data.results.map((p) => p.name); // ej. ['bulbasaur', ..., 'dragalge-mega', ...]
   speciesCacheTimestamp = Date.now();
 
   return speciesCache;
