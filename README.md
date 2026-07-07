@@ -96,7 +96,8 @@ Cada partida guarda `userPrizes` / `opponentPrizes` (cartas premio cogidas por c
 Todas las rutas protegidas requieren el header:
 Authorization: Bearer <token>
 
-El token se obtiene en `/api/auth/register` o `/api/auth/login` y no tiene expiración (sesión indefinida hasta que el usuario cierre sesión manualmente).
+- El token se obtiene en `/api/auth/register` o `/api/auth/login` y no tiene expiración (sesión indefinida hasta que el usuario cierre sesión manualmente).
+- Los endpoints `/register` y `/login` tienen un límite de 10 intentos por IP cada 15 minutos para mitigar fuerza bruta y spam.
 
 ## Deploy
 
