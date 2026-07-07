@@ -101,8 +101,3 @@ El token se obtiene en `/api/auth/register` o `/api/auth/login` y no tiene expir
 ## Deploy
 
 Conectado a Render con auto-deploy en cada push a `main`. Variables de entorno configuradas en el dashboard de Render (Environment).
-
-## TODO futuro
-
-- Modelo de Torneos (`Tournament`), con relación opcional desde `Match` (`tournamentId`)
-- Rate limiting en endpoints de auth
