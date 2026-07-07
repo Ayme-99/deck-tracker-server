@@ -188,19 +188,21 @@ exports.getDeckRanking = async (req, res) => {
       },
       { $unwind: '$deckInfo' },
       {
-        $project: {
-          _id: 0,
-          deckId: '$_id',
-          deckName: '$deckInfo.name',
-          totalMatches: 1,
-          wins: 1,
-          losses: 1,
-          ties: 1,
-          winRate: {
-            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
-          }
+      $project: {
+        _id: 0,
+        deckId: '$_id',
+        deckName: '$deckInfo.name',
+        sprite1: '$deckInfo.sprite1',
+        sprite2: '$deckInfo.sprite2',
+        totalMatches: 1,
+        wins: 1,
+        losses: 1,
+        ties: 1,
+        winRate: {
+          $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
         }
-      },
+      }
+    },
       { $sort: { winRate: -1 } }
     ]);
 
