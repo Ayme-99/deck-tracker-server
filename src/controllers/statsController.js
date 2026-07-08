@@ -164,7 +164,7 @@ exports.getGlobalOverview = async (req, res) => {
 // Ranking de mazos por win-rate (con mínimo de partidas para ser representativo)
 exports.getDeckRanking = async (req, res) => {
   try {
-    const minMatches = parseInt(req.query.minMatches) || 3;
+    const minMatches = parseInt(req.query.minMatches) || 1;
     const sortBy = req.query.sortBy || 'winRate';
 
     // Cada criterio principal usa winRate como desempate secundario,
