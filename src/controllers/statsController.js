@@ -164,13 +164,15 @@ exports.getGlobalOverview = async (req, res) => {
 // Ranking de mazos por win-rate (con mínimo de partidas para ser representativo)
 exports.getDeckRanking = async (req, res) => {
   try {
-    const minMatches = parseInt(req.query.minMatches) || 3; // por defecto, al menos 3 partidas
-    const sortBy = req.query.sortBy || 'winRate'; // winRate | totalMatches | deckName
+    const minMatches = parseInt(req.query.minMatches) || 3;
+    const sortBy = req.query.sortBy || 'winRate';
 
+    // Cada criterio principal usa winRate como desempate secundario,
+    // salvo cuando el propio winRate ya es el criterio principal (ahi el desempate es totalMatches)
     const sortStages = {
-      winRate: { winRate: -1 },
-      totalMatches: { totalMatches: -1 },
-      deckName: { deckName: 1 }
+      winRate: { winRate: -1, totalMatches: -1 },
+      totalMatches: { totalMatches: -1, winRate: -1 },
+      deckName: { deckName: 1, winRate: -1 }
     };
     const sortStage = sortStages[sortBy] || sortStages.winRate;
 
