@@ -165,6 +165,14 @@ exports.getGlobalOverview = async (req, res) => {
 exports.getDeckRanking = async (req, res) => {
   try {
     const minMatches = parseInt(req.query.minMatches) || 3; // por defecto, al menos 3 partidas
+    const sortBy = req.query.sortBy || 'winRate'; // winRate | totalMatches | deckName
+
+    const sortStages = {
+      winRate: { winRate: -1 },
+      totalMatches: { totalMatches: -1 },
+      deckName: { deckName: 1 }
+    };
+    const sortStage = sortStages[sortBy] || sortStages.winRate;
 
     const ranking = await Match.aggregate([
       { $match: { userId: req.userId } },
@@ -188,22 +196,22 @@ exports.getDeckRanking = async (req, res) => {
       },
       { $unwind: '$deckInfo' },
       {
-      $project: {
-        _id: 0,
-        deckId: '$_id',
-        deckName: '$deckInfo.name',
-        sprite1: '$deckInfo.sprite1',
-        sprite2: '$deckInfo.sprite2',
-        totalMatches: 1,
-        wins: 1,
-        losses: 1,
-        ties: 1,
-        winRate: {
-          $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+        $project: {
+          _id: 0,
+          deckId: '$_id',
+          deckName: '$deckInfo.name',
+          sprite1: '$deckInfo.sprite1',
+          sprite2: '$deckInfo.sprite2',
+          totalMatches: 1,
+          wins: 1,
+          losses: 1,
+          ties: 1,
+          winRate: {
+            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+          }
         }
-      }
-    },
-      { $sort: { winRate: -1 } }
+      },
+      { $sort: sortStage }
     ]);
 
     res.json(ranking);
