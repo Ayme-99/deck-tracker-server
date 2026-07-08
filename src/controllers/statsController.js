@@ -164,7 +164,17 @@ exports.getGlobalOverview = async (req, res) => {
 // Ranking de mazos por win-rate (con mínimo de partidas para ser representativo)
 exports.getDeckRanking = async (req, res) => {
   try {
-    const minMatches = parseInt(req.query.minMatches) || 3; // por defecto, al menos 3 partidas
+    const minMatches = parseInt(req.query.minMatches) || 3;
+    const sortBy = req.query.sortBy || 'winRate';
+
+    // Cada criterio principal usa winRate como desempate secundario,
+    // salvo cuando el propio winRate ya es el criterio principal (ahi el desempate es totalMatches)
+    const sortStages = {
+      winRate: { winRate: -1, totalMatches: -1 },
+      totalMatches: { totalMatches: -1, winRate: -1 },
+      deckName: { deckName: 1, winRate: -1 }
+    };
+    const sortStage = sortStages[sortBy] || sortStages.winRate;
 
     const ranking = await Match.aggregate([
       { $match: { userId: req.userId } },
@@ -188,22 +198,22 @@ exports.getDeckRanking = async (req, res) => {
       },
       { $unwind: '$deckInfo' },
       {
-      $project: {
-        _id: 0,
-        deckId: '$_id',
-        deckName: '$deckInfo.name',
-        sprite1: '$deckInfo.sprite1',
-        sprite2: '$deckInfo.sprite2',
-        totalMatches: 1,
-        wins: 1,
-        losses: 1,
-        ties: 1,
-        winRate: {
-          $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+        $project: {
+          _id: 0,
+          deckId: '$_id',
+          deckName: '$deckInfo.name',
+          sprite1: '$deckInfo.sprite1',
+          sprite2: '$deckInfo.sprite2',
+          totalMatches: 1,
+          wins: 1,
+          losses: 1,
+          ties: 1,
+          winRate: {
+            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+          }
         }
-      }
-    },
-      { $sort: { winRate: -1 } }
+      },
+      { $sort: sortStage }
     ]);
 
     res.json(ranking);
