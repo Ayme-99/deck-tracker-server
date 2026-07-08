@@ -12,7 +12,6 @@ const deckSchema = new mongoose.Schema({
   userId: { type: String, required: true },
   wins: { type: Number, default: 0 },
   losses: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now },
   sprite1: {
     type: String,
     default: null
@@ -21,6 +20,6 @@ const deckSchema = new mongoose.Schema({
     type: String,
     default: null
   }
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('Deck', deckSchema);
