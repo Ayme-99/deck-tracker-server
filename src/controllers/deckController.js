@@ -1,4 +1,5 @@
 const Deck = require('../models/Deck');
+const Match = require('../models/Match');
 
 exports.getDecks = async (req, res) => {
   try {
@@ -66,7 +67,15 @@ exports.deleteDeck = async (req, res) => {
   try {
     const deck = await Deck.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!deck) return res.status(404).json({ error: 'Mazo no encontrado' });
-    res.json({ message: 'Mazo eliminado correctamente' });
+
+    // Borrado en cascada: elimina también las partidas del mazo
+    // para no dejar stats huérfanas (issue #31)
+    const { deletedCount } = await Match.deleteMany({ deckId: deck._id, userId: req.userId });
+
+    res.json({
+      message: 'Mazo eliminado correctamente',
+      deletedMatches: deletedCount,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
