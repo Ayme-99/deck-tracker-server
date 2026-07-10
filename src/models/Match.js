@@ -45,7 +45,40 @@ const matchSchema = new mongoose.Schema({
   playedAt: {
     type: Date,
     default: Date.now
+  },
+  // Referencia opcional al torneo (modo 'tracked') al que pertenece esta
+  // partida. Si es null, la partida es "suelta" y no forma parte de ningun
+  // torneo, tal y como funcionaba hasta ahora.
+  tournamentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tournament',
+    default: null
+  },
+  // Fase dentro del torneo (solo tiene sentido si viene tournamentId).
+  // 'league_round' cubre el caso de liga; en ese modo los puntos/posicion
+  // no se calculan aqui, van aparte en Tournament.standingSnapshots.
+  phase: {
+    type: String,
+    enum: ['group_stage', 'swiss', 'round_of_16', 'quarterfinal', 'semifinal', 'final', 'league_round', null],
+    default: null
+  },
+  // Numero de ronda dentro de la fase (ej. ronda 3 de swiss, jornada 5 de
+  // liga). No aplica en fases de eliminatoria directa (round_of_16,
+  // quarterfinal...), donde la propia fase ya identifica la partida.
+  round: {
+    type: Number,
+    default: null
   }
+});
+
+// Si se informa phase o round, tournamentId debe venir tambien: no tiene
+// sentido asignar una fase/ronda a una partida que no pertenece a ningun
+// torneo.
+matchSchema.pre('validate', function(next) {
+  if ((this.phase || this.round !== null && this.round !== undefined) && !this.tournamentId) {
+    return next(new Error('phase y round solo tienen sentido si la partida pertenece a un torneo (tournamentId)'));
+  }
+  next();
 });
 
 // Calcula el resultado automáticamente antes de guardar
