@@ -89,16 +89,21 @@ const tournamentSchema = new mongoose.Schema({
 // Valida los campos que son obligatorios solo en modo 'tracked'.
 // En 'hosted' estos campos no aplican (deckId no tiene sentido porque cada
 // jugador puede llevar un mazo distinto, y todavia no gestionamos jugadores).
-tournamentSchema.pre('validate', function(next) {
+//
+// NOTA: bajo Mongoose 9.x los hooks pre('validate') con estilo callback
+// (function(next) { ... next(err) }) NO funcionan (lanzan "next is not a
+// function"), asi que la validacion nunca se llegaba a aplicar en la
+// practica. El patron correcto es una funcion normal que lanza el error
+// directamente. Descubierto al escribir los tests del modelo (issue #18).
+tournamentSchema.pre('validate', function() {
   if (this.mode === 'tracked') {
     if (!this.structure) {
-      return next(new Error('El campo structure es obligatorio en torneos de modo "tracked"'));
+      throw new Error('El campo structure es obligatorio en torneos de modo "tracked"');
     }
     if (!this.deckId) {
-      return next(new Error('El campo deckId es obligatorio en torneos de modo "tracked"'));
+      throw new Error('El campo deckId es obligatorio en torneos de modo "tracked"');
     }
   }
-  next();
 });
 
 module.exports = mongoose.model('Tournament', tournamentSchema);
