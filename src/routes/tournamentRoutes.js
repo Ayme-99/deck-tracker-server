@@ -10,5 +10,6 @@ router.get('/:id', tournamentController.getTournamentById);
 router.post('/', tournamentController.createTournament);
 router.put('/:id', tournamentController.updateTournament);
 router.delete('/:id', tournamentController.deleteTournament);
+router.get('/:id/summary', tournamentController.getTournamentSummary);
 
 module.exports = router;
