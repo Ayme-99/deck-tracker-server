@@ -74,11 +74,14 @@ const matchSchema = new mongoose.Schema({
 // Si se informa phase o round, tournamentId debe venir tambien: no tiene
 // sentido asignar una fase/ronda a una partida que no pertenece a ningun
 // torneo.
-matchSchema.pre('validate', function(next) {
-  if ((this.phase || this.round !== null && this.round !== undefined) && !this.tournamentId) {
-    return next(new Error('phase y round solo tienen sentido si la partida pertenece a un torneo (tournamentId)'));
+//
+// NOTA: mismo fix que en Tournament.js - bajo Mongoose 9.x el estilo
+// callback (function(next)) no funciona en pre('validate'). Descubierto
+// al escribir los tests del modelo (issue #18).
+matchSchema.pre('validate', function() {
+  if ((this.phase || (this.round !== null && this.round !== undefined)) && !this.tournamentId) {
+    throw new Error('phase y round solo tienen sentido si la partida pertenece a un torneo (tournamentId)');
   }
-  next();
 });
 
 // Calcula el resultado automáticamente antes de guardar
