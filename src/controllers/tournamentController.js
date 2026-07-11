@@ -1,5 +1,6 @@
 const Tournament = require('../models/Tournament');
 const Match = require('../models/Match');
+const mongoose = require('mongoose');
 
 exports.getTournaments = async (req, res) => {
   try {
@@ -111,5 +112,59 @@ exports.addStandingSnapshot = async (req, res) => {
     res.status(201).json(tournament);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+};
+
+// Resumen W-L-T del torneo, global y desglosado por fase
+exports.getTournamentSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const tournament = await Tournament.findOne({ _id: id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const byPhase = await Match.aggregate([
+      { $match: { tournamentId: new mongoose.Types.ObjectId(id), userId: req.userId } },
+      {
+        $group: {
+          _id: '$phase',
+          totalMatches: { $sum: 1 },
+          wins: { $sum: { $cond: [{ $eq: ['$result', 'win'] }, 1, 0] } },
+          losses: { $sum: { $cond: [{ $eq: ['$result', 'loss'] }, 1, 0] } },
+          ties: { $sum: { $cond: [{ $eq: ['$result', 'tie'] }, 1, 0] } }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          phase: '$_id',
+          totalMatches: 1,
+          wins: 1,
+          losses: 1,
+          ties: 1,
+          winRate: {
+            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+          }
+        }
+      },
+      { $sort: { phase: 1 } }
+    ]);
+
+    // El global se calcula sumando el desglose por fase, en vez de lanzar
+    // una segunda query, ya que byPhase ya cubre todas las partidas del torneo
+    const overall = byPhase.reduce((acc, phase) => ({
+      totalMatches: acc.totalMatches + phase.totalMatches,
+      wins: acc.wins + phase.wins,
+      losses: acc.losses + phase.losses,
+      ties: acc.ties + phase.ties
+    }), { totalMatches: 0, wins: 0, losses: 0, ties: 0 });
+
+    overall.winRate = overall.totalMatches > 0
+      ? Math.round((overall.wins / overall.totalMatches) * 1000) / 10
+      : 0;
+
+    res.json({ overall, byPhase });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
