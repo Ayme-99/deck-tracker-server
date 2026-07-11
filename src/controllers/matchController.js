@@ -12,17 +12,18 @@ exports.createMatch = async (req, res) => {
 
 exports.getMatches = async (req, res) => {
   try {
-    const { deckId } = req.query;
+    const { deckId, tournamentId } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
     const filter = { userId: req.userId };
     if (deckId) filter.deckId = deckId;
+    if (tournamentId) filter.tournamentId = tournamentId;
 
     const [matches, total] = await Promise.all([
       Match.find(filter)
-        .sort({ playedAt: -1 })
+        .sort({ phase: 1, round: 1, playedAt: -1 })
         .skip(skip)
         .limit(limit),
       Match.countDocuments(filter)
