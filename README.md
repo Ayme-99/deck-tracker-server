@@ -23,9 +23,9 @@ src/
 │   ├── Deck.js
 │   ├── Match.js
 │   ├── OpponentArchetype.js
-+   ├── Tournament.js
-+   ├── TournamentPlayer.js       # sin usar todavia, preparado para modo hosted (issue #11)
-+   ├── TournamentMatch.js        # sin usar todavia, preparado para modo hosted (issue #11)
+│   ├── Tournament.js
+│   ├── TournamentPlayer.js       # sin usar todavia, preparado para modo hosted (issue #11)
+│   ├── TournamentMatch.js        # sin usar todavia, preparado para modo hosted (issue #11)
 │   └── User.js
 ├── controllers/
 │   ├── authController.js
@@ -33,17 +33,16 @@ src/
 │   ├── matchController.js
 │   ├── opponentArchetypeController.js
 │   ├── pokemonController.js
-+   ├── statsController.js
-+   └── tournamentController.js
+│   ├── statsController.js
+│   └── tournamentController.js
 ├── routes/
 │   ├── authRoutes.js
 │   ├── deckRoutes.js
 │   ├── matchRoutes.js
 │   ├── opponentArchetypeRoutes.js
 │   ├── pokemonRoutes.js
--   └── statsRoutes.js
-+   ├── statsRoutes.js
-+   └── tournamentRoutes.js
+│   ├── statsRoutes.js
+│   └── tournamentRoutes.js
 ├── services/
 │   └── pokeapiService.js
 └── middleware/
@@ -89,7 +88,7 @@ npm run dev
 ### Matches (`/api/matches`) — todas requieren auth
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/?deckId=&page=&limit=` | Lista partidas (filtrable por mazo, paginado) |
+| GET | `/?deckId=&tournamentId=&page=&limit=` | Lista partidas (filtrable por mazo y/o torneo, paginado) |
 | GET | `/opponent-suggestions?q=` | Autocompletado de rivales ya registrados |
 | GET | `/:id` | Detalle de una partida |
 | POST | `/` | Registra una partida |
@@ -97,6 +96,8 @@ npm run dev
 | DELETE | `/:id` | Elimina una partida |
 
 Cada partida guarda `userPrizes` / `opponentPrizes` (cartas premio cogidas por cada lado, 0-6). El campo `result` (`win`/`loss`/`tie`) se calcula automáticamente al guardar. `endReason` admite: `normal`, `concession`, `no_pokemon`, `time`, `deck_out`.
+
+Opcionalmente, una partida puede asociarse a un torneo mediante `tournamentId`, `phase` (`group_stage`, `swiss`, `round_of_16`, `quarterfinal`, `semifinal`, `final`, `league_round`) y `round`. Si se informa `phase` o `round`, `tournamentId` es obligatorio.
 
 ### Stats (`/api/stats`) — todas requieren auth
 | Método | Ruta | Descripción |
@@ -136,9 +137,7 @@ Seguimiento de torneos en modo **tracked** (registro del propio historial dentro
 | POST | `/:id/standing` | Añade un snapshot manual de puntos/posición. Solo válido si `structure` es `league` |
 | GET | `/:id/summary` | Resumen W-L-T global y desglosado por fase |
 
-`Match` se extiende con `tournamentId`, `phase` (`group_stage`, `swiss`, `round_of_16`, `quarterfinal`, `semifinal`, `final`, `league_round`) y `round`, todos opcionales. `GET /api/matches` acepta `?tournamentId=` para filtrar.
-
-Modo **hosted** (la app aloja el torneo completo con jugadores y pairings) queda fuera de alcance por ahora — ver TODO.
+Modo **hosted** (la app aloja el torneo completo con jugadores y pairings) queda fuera de alcance por ahora — ver TODO. Los modelos `TournamentPlayer` y `TournamentMatch` ya están creados mas no conectados a ningún endpoint todavía.
 
 ## Autenticación
 
@@ -159,8 +158,5 @@ Conectado a Render con auto-deploy en cada push a `main`. Variables de entorno c
 
 ## TODO
 
-## TODO
-
-- [ ] Modelo y endpoints de Torneos
-+ [ ] Torneos, modo hosted: gestión de jugadores, pairings automáticos (swiss/eliminatoria/grupos/liga) y cálculo de standings
+- [ ] Torneos, modo hosted: gestión de jugadores, pairings automáticos (swiss/eliminatoria/grupos/liga) y cálculo de standings
 - [ ] Añadir `expiresIn` a los JWT (caducidad de sesión)
