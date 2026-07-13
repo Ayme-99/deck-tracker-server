@@ -158,5 +158,5 @@ Conectado a Render con auto-deploy en cada push a `main`. Variables de entorno c
 
 ## TODO
 
-- [ ] Torneos, modo hosted: gestión de jugadores, pairings automáticos (swiss/eliminatoria/grupos/liga) y cálculo de standings
-- [ ] Añadir `expiresIn` a los JWT (caducidad de sesión)
+- [ ] Torneos, modo hosted: gestión de jugadores, pairings automáticos (swiss/eliminatoria/grupos/liga) y cálculo de standings.
+- [ ] Añadir `expiresIn` a los JWT (caducidad de sesión).
