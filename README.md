@@ -139,6 +139,8 @@ Seguimiento de torneos en modo **tracked** (registro del propio historial dentro
 
 Modo **hosted** (la app aloja el torneo completo con jugadores y pairings) queda fuera de alcance por ahora — ver TODO. Los modelos `TournamentPlayer` y `TournamentMatch` ya están creados mas no conectados a ningún endpoint todavía.
 
+> Diseño completo del modo hosted (pendiente de desarrollo): ver [`TORNEOS_HOSTED_GDD.md`](./TORNEOS_HOSTED_GDD.md)
+
 ## Autenticación
 
 Todas las rutas protegidas requieren el header:

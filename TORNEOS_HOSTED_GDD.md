@@ -49,8 +49,8 @@ player1Prizes: { type: Number, min: 0, max: 6 },
 player2Prizes: { type: Number, min: 0, max: 6 },
 isDraw: { type: Boolean, default: false },
 // Solo relevante en eliminatoria a ida y vuelta (ver seccion 4.2)
-leg: { type: String, enum: ['single', 'first_leg', 'second_leg'], default: 'single' },
-tiedMatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TournamentMatch', default: null } // enlaza ida<->vuelta
+leg: { type: String, enum: ['single', 'first_leg', 'second_leg', 'sudden_death'], default: 'single' },
+tiedMatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TournamentMatch', default: null } // enlaza ida<->vuelta (y muerte subita si aplica)
 ```
 
 ---
@@ -77,7 +77,8 @@ tiedMatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TournamentMatch', def
 
 - Bracket clásico. Emparejamientos generados **aleatoriamente**, o **por seeding según standing** si la estructura es `swiss_elimination` (el mejor clasificado de swiss se empareja contra el peor clasificado que pase el corte, etc.)
 - **Opción a elegir al crear el torneo:** partidas a **ida y vuelta** o **partido único** (quien gana pasa, quien pierde queda fuera)
-  - A ida y vuelta: se generan 2 `TournamentMatch` enlazados vía `tiedMatchId`, y el ganador se decide por resultado agregado (suma de premios de ambas idas, o el sistema de desempate que se decida — **pendiente de cerrar el detalle exacto de cómo desempatar un ida/vuelta empatado**, ej. diferencia de premios o partido de desempate)
+  - A ida y vuelta: se generan 2 `TournamentMatch` enlazados vía `tiedMatchId`, y el ganador se decide por resultado agregado (suma de premios de ambas idas)
+  - **Si el agregado también empata:** se juega una **muerte súbita** (partido único de desempate), igual que contempla el reglamento oficial de Pokémon TCG. Se registra como un tercer `TournamentMatch` con `leg: 'sudden_death'`, vinculado a los dos anteriores vía `tiedMatchId`; su resultado es definitivo y decide quién avanza
 - **Se pregunta al crear el torneo** si se disputan **3er y 4º puesto** (partido extra entre los perdedores de semifinal)
 
 ### 4.3 Grupos + eliminación
@@ -127,7 +128,6 @@ Para cubrir el caso de "alguien gestiona el torneo y otro participante quiere te
 
 - **Torneos públicos con enlace + varios admins**: acceso sin JWT (o token de solo lectura tipo "share link"), roles (creador/admin/espectador). Es un cambio de arquitectura de autenticación/permisos, no solo una feature de torneos — se aborda como proyecto aparte cuando haya necesidad real de co-gestión
 - **OOMW%** como segundo criterio de desempate
-- Refinar el sistema de desempate de eliminatorias a ida y vuelta si el agregado también empata (partido de desempate, gol de oro, etc. — a definir si llega a hacer falta)
 
 ---
 
