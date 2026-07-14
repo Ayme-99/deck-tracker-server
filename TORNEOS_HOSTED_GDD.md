@@ -91,11 +91,15 @@ tiedMatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TournamentMatch', def
 ### 4.3 Grupos + eliminación
 
 - Al crear el torneo: nº de participantes, tamaño de cada grupo, y nº de clasificados por grupo
-- Los clasificados pasan a la fase eliminatoria. Si el nº de clasificados no es una potencia de 2, los mejores (por seeding/standing dentro de su grupo) reciben **bye** para saltarse la primera ronda eliminatoria:
+- Los clasificados pasan a la fase eliminatoria. La fase destino es la mayor potencia de 2 que **no supere** el nº de clasificados (2, 4, 8 o 16 en esta v1):
   ```
-  byes = siguiente_potencia_de_2(nº_clasificados) - nº_clasificados
+  fase_destino = mayor_potencia_de_2 <= nº_clasificados
+  extra = nº_clasificados - fase_destino
   ```
-  Ejemplo: 10 clasificados → siguiente potencia de 2 = 16 → 6 byes. Los 6 mejores pasan directos a cuartos; los otros 4 juegan una ronda previa reducida entre ellos para completar el cuadro de 8
+  Si `extra` es 0, todos los clasificados entran directos (caso trivial, ya es potencia de 2). Si no, los `2 × extra` peor clasificados (por seeding) juegan una **ronda previa reducida** entre ellos (en la fase inmediatamente superior del bracket) para producir `extra` ganadores; el resto (`nº_clasificados - 2×extra`, los mejores seeds) recibe **bye** directo a la fase destino.
+
+  Ejemplo: 10 clasificados → mayor potencia de 2 ≤ 10 es **8** (cuartos) → `extra = 10 - 8 = 2` → los **4** peor clasificados (2×2) juegan una ronda previa reducida (2 partidos, fase "octavos" aunque solo sea esta porción) produciendo 2 ganadores; los **6** mejores pasan directos a cuartos. Total entrando a cuartos: 6 + 2 = 8. ✅ (Corregido: la version anterior de esta formula tenia la logica invertida)
+- Más de 16 clasificados no soportado en esta v1 (mismo límite que en eliminación directa, sección 4.2)
 
 ### 4.4 Liga
 

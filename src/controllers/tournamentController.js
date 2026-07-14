@@ -5,6 +5,8 @@ const TournamentPlayer = require('../models/TournamentPlayer');
 const TournamentMatch = require('../models/TournamentMatch');
 const { generateSwissPairings } = require('../services/swissPairingService');
 const { generateBracket } = require('../services/eliminationPairingService');
+const { assignGroups, calculateEliminationEntry } = require('../services/groupsEliminationService');
+const { generateRoundRobinSchedule } = require('../services/roundRobinService');
 
 exports.getTournaments = async (req, res) => {
   try {
@@ -471,6 +473,123 @@ exports.generateEliminationBracket = async (req, res) => {
     }
 
     res.status(201).json({ phase, matches: createdMatches });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// --- Grupos + Eliminacion (issue #43) ---
+
+// Reparte los jugadores del torneo en grupos (body: { groupSize }) y guarda
+// el grupo asignado en cada TournamentPlayer.groupName ("Grupo 1", "Grupo 2"...)
+exports.assignPlayerGroups = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const players = await TournamentPlayer.find({ tournamentId: tournament._id, dropped: false });
+    const playerIds = players.map((p) => p._id.toString());
+    const groups = assignGroups(playerIds, req.body.groupSize);
+
+    for (let i = 0; i < groups.length; i++) {
+      const groupName = `Grupo ${i + 1}`;
+      await TournamentPlayer.updateMany(
+        { _id: { $in: groups[i] } },
+        { groupName }
+      );
+    }
+
+    res.json({ groups: groups.map((ids, i) => ({ groupName: `Grupo ${i + 1}`, playerIds: ids })) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// Genera el calendario round-robin (todos contra todos) dentro de cada
+// grupo ya asignado, creando los TournamentMatch de phase: 'group_stage'
+exports.generateGroupStageRounds = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const players = await TournamentPlayer.find({ tournamentId: tournament._id, dropped: false });
+    const groupNames = [...new Set(players.map((p) => p.groupName).filter(Boolean))];
+    if (groupNames.length === 0) {
+      return res.status(400).json({ error: 'Los jugadores no tienen grupo asignado todavia (ver assignPlayerGroups)' });
+    }
+
+    const createdMatches = [];
+    for (const groupName of groupNames) {
+      const groupPlayerIds = players.filter((p) => p.groupName === groupName).map((p) => p._id.toString());
+      const schedule = generateRoundRobinSchedule(groupPlayerIds);
+
+      for (let roundIndex = 0; roundIndex < schedule.length; roundIndex++) {
+        for (const pairing of schedule[roundIndex]) {
+          const match = await TournamentMatch.create({
+            tournamentId: tournament._id,
+            phase: 'group_stage',
+            round: roundIndex + 1,
+            player1Id: pairing.player1Id,
+            player2Id: pairing.player2Id,
+            status: pairing.player2Id === null ? 'completed' : 'pending',
+            winnerId: pairing.player2Id === null ? pairing.player1Id : null
+          });
+          createdMatches.push(match);
+
+          if (pairing.player2Id === null) {
+            await TournamentPlayer.findByIdAndUpdate(pairing.player1Id, { $inc: { points: 3, wins: 1 } });
+          }
+        }
+      }
+    }
+
+    res.status(201).json({ matches: createdMatches });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// Calcula la entrada a la fase eliminatoria a partir de los clasificados
+// (body: { classifiedIds: [...] }, ya ordenados de mejor a peor seed) y
+// crea los TournamentMatch: byes directos (completados) + ronda previa
+// reducida si el nº de clasificados no es potencia de 2.
+exports.generateGroupsEliminationEntry = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const { classifiedIds } = req.body;
+    const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
+
+    const createdMatches = [];
+
+    // Los byes se registran como partidas ya completadas (igual patron que
+    // el bye de swiss), marcando el avance sin necesidad de jugar nada
+    for (const playerId of byeIds) {
+      const match = await TournamentMatch.create({
+        tournamentId: tournament._id,
+        phase: targetPhase,
+        player1Id: playerId,
+        player2Id: null,
+        status: 'completed',
+        winnerId: playerId
+      });
+      createdMatches.push(match);
+    }
+
+    if (preliminary) {
+      for (const pairing of preliminary.pairings) {
+        const match = await TournamentMatch.create({
+          tournamentId: tournament._id,
+          phase: preliminary.phase,
+          player1Id: pairing.player1Id,
+          player2Id: pairing.player2Id
+        });
+        createdMatches.push(match);
+      }
+    }
+
+    res.status(201).json({ targetPhase, preliminaryPhase: preliminary?.phase || null, matches: createdMatches });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

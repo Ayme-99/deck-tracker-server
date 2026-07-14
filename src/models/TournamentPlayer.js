@@ -71,6 +71,12 @@ const tournamentPlayerSchema = new mongoose.Schema({
 
   // Si ya recibio un bye en alguna ronda anterior, para no darle dos byes
   // seguidos mientras haya otros jugadores que aun no hayan recibido uno
+  // Grupo asignado (solo relevante en structure 'groups_elimination', issue #43)
+  groupName: {
+    type: String,
+    default: null
+  },
+
   byeReceived: {
     type: Boolean,
     default: false
