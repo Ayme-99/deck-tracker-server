@@ -20,5 +20,8 @@ router.put('/:id/players/:playerId', tournamentController.updatePlayer);
 router.delete('/:id/players/:playerId', tournamentController.deletePlayer);
 router.put('/:id/hosted-matches/:matchId/result', tournamentController.registerMatchResult);
 router.post('/:id/elimination-bracket', tournamentController.generateEliminationBracket);
+router.post('/:id/assign-groups', tournamentController.assignPlayerGroups);
+router.post('/:id/group-stage-rounds', tournamentController.generateGroupStageRounds);
+router.post('/:id/groups-elimination-entry', tournamentController.generateGroupsEliminationEntry);
 
 module.exports = router;

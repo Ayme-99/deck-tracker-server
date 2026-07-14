@@ -71,4 +71,11 @@ function generateBracket(playerIds, { seeded = false } = {}) {
   return { phase, pairings };
 }
 
-module.exports = { bracketPhaseForSize, nextPhase, seededPairings, generateBracket, shuffle };
+/** Fase inmediatamente superior (bracket mas grande), o null si 'round_of_16' ya es la mas grande soportada. */
+function previousPhase(phase) {
+  const idx = PHASE_ORDER.indexOf(phase);
+  if (idx <= 0) return null;
+  return PHASE_ORDER[idx - 1];
+}
+
+module.exports = { bracketPhaseForSize, nextPhase, previousPhase, seededPairings, generateBracket, shuffle };
