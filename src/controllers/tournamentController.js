@@ -282,3 +282,140 @@ exports.getHostedStandings = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// --- Jugadores (hosted) ---
+
+exports.createPlayer = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const player = new TournamentPlayer({ ...req.body, tournamentId: tournament._id });
+    await player.save();
+    res.status(201).json(player);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+exports.getPlayers = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const players = await TournamentPlayer.find({ tournamentId: tournament._id }).sort({ name: 1 });
+    res.json(players);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.updatePlayer = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const player = await TournamentPlayer.findOneAndUpdate(
+      { _id: req.params.playerId, tournamentId: tournament._id },
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!player) return res.status(404).json({ error: 'Jugador no encontrado' });
+    res.json(player);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+exports.deletePlayer = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    // No se borran en cascada los TournamentMatch ya jugados por este
+    // jugador -- quedan como historial, igual que al borrar un torneo
+    // tracked no se borran sus Match.
+    const player = await TournamentPlayer.findOneAndDelete({
+      _id: req.params.playerId,
+      tournamentId: tournament._id
+    });
+    if (!player) return res.status(404).json({ error: 'Jugador no encontrado' });
+    res.json({ message: 'Jugador eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// --- Resultados (hosted) ---
+
+// Registra el resultado de un TournamentMatch: actualiza el match, los
+// puntos/W-L-D/prizeDifferential de ambos jugadores, y si alguno de los
+// dos es el organizador (isOrganizer), genera automaticamente un Match
+// normal vinculado a su deckId real para que cuente en sus stats.
+exports.registerMatchResult = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const tMatch = await TournamentMatch.findOne({ _id: req.params.matchId, tournamentId: tournament._id });
+    if (!tMatch) return res.status(404).json({ error: 'Partida no encontrada' });
+
+    const { player1Prizes, player2Prizes, winnerId, isDraw } = req.body;
+
+    tMatch.player1Prizes = player1Prizes;
+    tMatch.player2Prizes = player2Prizes;
+    tMatch.isDraw = !!isDraw;
+    tMatch.winnerId = isDraw ? null : winnerId;
+    tMatch.status = 'completed';
+    await tMatch.save();
+
+    const player1 = await TournamentPlayer.findById(tMatch.player1Id);
+    const player2 = await TournamentPlayer.findById(tMatch.player2Id);
+
+    const diff1 = (player1Prizes || 0) - (player2Prizes || 0);
+    const diff2 = -diff1;
+
+    if (isDraw) {
+      player1.draws += 1;
+      player2.draws += 1;
+      player1.points += 1;
+      player2.points += 1;
+    } else if (String(winnerId) === String(player1._id)) {
+      player1.wins += 1;
+      player1.points += 3;
+      player2.losses += 1;
+    } else {
+      player2.wins += 1;
+      player2.points += 3;
+      player1.losses += 1;
+    }
+    player1.prizeDifferential += diff1;
+    player2.prizeDifferential += diff2;
+    await player1.save();
+    await player2.save();
+
+    // Si alguno de los dos es el organizador, genera un Match real
+    // (modelo de tracked) vinculado a su deckId, para que cuente en sus
+    // stats/rachas/matchups sin tener que registrarlo dos veces a mano
+    const createMatchIfOrganizer = async (self, opponent, ownPrizes, opponentPrizes) => {
+      if (!self.isOrganizer || !self.deckId) return;
+      await Match.create({
+        deckId: self.deckId,
+        userId: req.userId,
+        opponentDeck: opponent.deckArchetype || opponent.name,
+        userPrizes: ownPrizes,
+        opponentPrizes: opponentPrizes,
+        endReason: 'normal',
+        tournamentId: tournament._id,
+        phase: tMatch.phase,
+        round: tMatch.round
+      });
+    };
+    await createMatchIfOrganizer(player1, player2, player1Prizes, player2Prizes);
+    await createMatchIfOrganizer(player2, player1, player2Prizes, player1Prizes);
+
+    res.json({ match: tMatch, player1, player2 });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
