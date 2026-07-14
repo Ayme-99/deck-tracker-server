@@ -594,3 +594,60 @@ exports.generateGroupsEliminationEntry = async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 };
+
+// --- Liga (issue #44) ---
+
+// Genera el calendario round-robin completo de la liga (phase: 'league_round').
+// Si tournament.leagueDoubleRound es true, añade una segunda vuelta con
+// local/visitante invertidos, continuando la numeracion de rondas.
+exports.generateLeagueRounds = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const players = await TournamentPlayer.find({ tournamentId: tournament._id, dropped: false });
+    const playerIds = players.map((p) => p._id.toString());
+
+    const firstLegSchedule = generateRoundRobinSchedule(playerIds);
+    let fullSchedule = firstLegSchedule;
+
+    if (tournament.leagueDoubleRound) {
+      // Vuelta: mismos enfrentamientos con local/visitante invertidos
+      const secondLegSchedule = firstLegSchedule.map((round) =>
+        round.map((pairing) => ({
+          player1Id: pairing.player2Id,
+          player2Id: pairing.player1Id
+        }))
+      );
+      fullSchedule = [...firstLegSchedule, ...secondLegSchedule];
+    }
+
+    const createdMatches = [];
+    for (let roundIndex = 0; roundIndex < fullSchedule.length; roundIndex++) {
+      for (const pairing of fullSchedule[roundIndex]) {
+        // Un bye de round-robin (jugador impar) puede quedar como null tras
+        // invertir player1/player2 en la vuelta -- se preserva igual que
+        // en la ida, marcando victoria automatica sin partida que jugar.
+        const match = await TournamentMatch.create({
+          tournamentId: tournament._id,
+          phase: 'league_round',
+          round: roundIndex + 1,
+          player1Id: pairing.player1Id || pairing.player2Id,
+          player2Id: pairing.player1Id ? pairing.player2Id : null,
+          status: (pairing.player1Id && pairing.player2Id) ? 'pending' : 'completed',
+          winnerId: (pairing.player1Id && pairing.player2Id) ? null : (pairing.player1Id || pairing.player2Id)
+        });
+        createdMatches.push(match);
+
+        if (!pairing.player1Id || !pairing.player2Id) {
+          const byePlayerId = pairing.player1Id || pairing.player2Id;
+          await TournamentPlayer.findByIdAndUpdate(byePlayerId, { $inc: { points: 3, wins: 1 } });
+        }
+      }
+    }
+
+    res.status(201).json({ totalRounds: fullSchedule.length, matches: createdMatches });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
