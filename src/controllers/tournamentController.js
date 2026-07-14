@@ -240,3 +240,45 @@ exports.generateSwissRound = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Clasificacion del torneo hosted, ordenada por puntos y desempatada por
+// prizeDifferential (1er criterio). OMW% (2º criterio) se añade en #45.
+// Jugadores con el mismo points+prizeDifferential comparten posicion.
+exports.getHostedStandings = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const players = await TournamentPlayer.find({ tournamentId: tournament._id })
+      .sort({ points: -1, prizeDifferential: -1 });
+
+    let lastPoints = null;
+    let lastDiff = null;
+    let lastPosition = 0;
+
+    const standings = players.map((p, index) => {
+      const tiedWithPrevious = p.points === lastPoints && p.prizeDifferential === lastDiff;
+      const position = tiedWithPrevious ? lastPosition : index + 1;
+      lastPoints = p.points;
+      lastDiff = p.prizeDifferential;
+      lastPosition = position;
+
+      return {
+        position,
+        playerId: p._id,
+        name: p.name,
+        deckArchetype: p.deckArchetype,
+        points: p.points,
+        wins: p.wins,
+        losses: p.losses,
+        draws: p.draws,
+        prizeDifferential: p.prizeDifferential,
+        dropped: p.dropped
+      };
+    });
+
+    res.json({ standings });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
