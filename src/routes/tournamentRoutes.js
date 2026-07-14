@@ -13,5 +13,6 @@ router.delete('/:id', tournamentController.deleteTournament);
 router.post('/:id/standing', tournamentController.addStandingSnapshot);
 router.get('/:id/summary', tournamentController.getTournamentSummary);
 router.post('/:id/swiss-round', tournamentController.generateSwissRound);
+router.get('/:id/hosted-standings', tournamentController.getHostedStandings);
 
 module.exports = router;
