@@ -83,6 +83,14 @@ const tournamentSchema = new mongoose.Schema({
   thirdPlacePlayoff: {
     type: Boolean,
     default: false
+  },
+
+  // --- Configuracion de liga (issue #44) ---
+  // Solo relevante si structure es 'league'. Si true, cada enfrentamiento
+  // se juega dos veces (ida y vuelta, local/visitante invertidos).
+  leagueDoubleRound: {
+    type: Boolean,
+    default: false
   }
 
   // --- TODO (modo 'hosted', resto pendiente, ver issue #11) ---
