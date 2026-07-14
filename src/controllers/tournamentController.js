@@ -559,37 +559,8 @@ exports.generateGroupsEliminationEntry = async (req, res) => {
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const { classifiedIds } = req.body;
-    const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
-
-    const createdMatches = [];
-
-    // Los byes se registran como partidas ya completadas (igual patron que
-    // el bye de swiss), marcando el avance sin necesidad de jugar nada
-    for (const playerId of byeIds) {
-      const match = await TournamentMatch.create({
-        tournamentId: tournament._id,
-        phase: targetPhase,
-        player1Id: playerId,
-        player2Id: null,
-        status: 'completed',
-        winnerId: playerId
-      });
-      createdMatches.push(match);
-    }
-
-    if (preliminary) {
-      for (const pairing of preliminary.pairings) {
-        const match = await TournamentMatch.create({
-          tournamentId: tournament._id,
-          phase: preliminary.phase,
-          player1Id: pairing.player1Id,
-          player2Id: pairing.player2Id
-        });
-        createdMatches.push(match);
-      }
-    }
-
-    res.status(201).json({ targetPhase, preliminaryPhase: preliminary?.phase || null, matches: createdMatches });
+    const result = await createEliminationEntryMatches(tournament, classifiedIds);
+    res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -647,6 +618,100 @@ exports.generateLeagueRounds = async (req, res) => {
     }
 
     res.status(201).json({ totalRounds: fullSchedule.length, matches: createdMatches });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// --- Transicion de fase (issue #24) ---
+
+// Crea las partidas (byes + ronda previa si aplica) para la entrada a la
+// fase eliminatoria, respetando tournament.eliminationFormat (single_match
+// / two_legs) en la ronda previa. Reutilizada por swiss_elimination y
+// groups_elimination -- ambas comparten la misma logica de entrada.
+async function createEliminationEntryMatches(tournament, classifiedIds) {
+  const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
+  const createdMatches = [];
+
+  for (const playerId of byeIds) {
+    const match = await TournamentMatch.create({
+      tournamentId: tournament._id,
+      phase: targetPhase,
+      player1Id: playerId,
+      player2Id: null,
+      status: 'completed',
+      winnerId: playerId
+    });
+    createdMatches.push(match);
+  }
+
+  if (preliminary) {
+    for (const pairing of preliminary.pairings) {
+      if (tournament.eliminationFormat === 'two_legs') {
+        const firstLeg = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: preliminary.phase,
+          player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'first_leg'
+        });
+        const secondLeg = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: preliminary.phase,
+          player1Id: pairing.player2Id, player2Id: pairing.player1Id,
+          leg: 'second_leg', tiedMatchId: firstLeg._id
+        });
+        firstLeg.tiedMatchId = secondLeg._id;
+        await firstLeg.save();
+        createdMatches.push(firstLeg, secondLeg);
+      } else {
+        const match = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: preliminary.phase,
+          player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'single'
+        });
+        createdMatches.push(match);
+      }
+    }
+  }
+
+  return { targetPhase, preliminaryPhase: preliminary?.phase || null, matches: createdMatches };
+}
+
+// Cierra la fase de swiss o grupos y genera la entrada a la fase eliminatoria.
+// body: { topCut } para swiss_elimination, { qualifiersPerGroup } para
+// groups_elimination. El orden de seeding sale del standing real (puntos +
+// prizeDifferential), no de un orden arbitrario.
+exports.closePhaseToElimination = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    if (!['swiss_elimination', 'groups_elimination'].includes(tournament.structure)) {
+      return res.status(400).json({ error: 'Esta accion solo aplica a swiss_elimination o groups_elimination' });
+    }
+
+    let classifiedIds;
+
+    if (tournament.structure === 'swiss_elimination') {
+      const { topCut } = req.body;
+      const players = await TournamentPlayer.find({ tournamentId: tournament._id, dropped: false })
+        .sort({ points: -1, prizeDifferential: -1 });
+      classifiedIds = players.slice(0, topCut).map((p) => p._id.toString());
+    } else {
+      const { qualifiersPerGroup } = req.body;
+      const players = await TournamentPlayer.find({ tournamentId: tournament._id, dropped: false })
+        .sort({ points: -1, prizeDifferential: -1 });
+
+      const groupNames = [...new Set(players.map((p) => p.groupName).filter(Boolean))];
+      let qualifiers = [];
+      for (const groupName of groupNames) {
+        const groupPlayers = players.filter((p) => p.groupName === groupName);
+        qualifiers.push(...groupPlayers.slice(0, qualifiersPerGroup));
+      }
+      // Reordena el conjunto combinado de clasificados de todos los grupos
+      // por standing real, para que el seeding de la eliminatoria sea justo
+      qualifiers.sort((a, b) => b.points - a.points || b.prizeDifferential - a.prizeDifferential);
+      classifiedIds = qualifiers.map((p) => p._id.toString());
+    }
+
+    const result = await createEliminationEntryMatches(tournament, classifiedIds);
+    res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

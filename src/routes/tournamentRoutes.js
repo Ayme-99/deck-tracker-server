@@ -24,5 +24,6 @@ router.post('/:id/assign-groups', tournamentController.assignPlayerGroups);
 router.post('/:id/group-stage-rounds', tournamentController.generateGroupStageRounds);
 router.post('/:id/groups-elimination-entry', tournamentController.generateGroupsEliminationEntry);
 router.post('/:id/league-rounds', tournamentController.generateLeagueRounds);
+router.post('/:id/close-phase', tournamentController.closePhaseToElimination);
 
 module.exports = router;
