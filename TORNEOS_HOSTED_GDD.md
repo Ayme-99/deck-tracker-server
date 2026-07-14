@@ -21,6 +21,8 @@ Documento de diseño para el modo **hosted** de Torneos: la app aloja el torneo 
 
 ### `TournamentPlayer` (ya creado, issue #19 — pendiente ampliar)
 
+> **Nota de frontend (issue app#45):** al dar de alta un jugador, el campo `deckArchetype` puede autocompletarse reutilizando los mazos propios (`DeckService.getDecks()`) y los arquetipos rivales ya guardados (`OpponentArchetypeService.getAll()`) — mismo patrón de `Autocomplete<String>` que ya usa `register_match_screen.dart`. No requiere ningún endpoint nuevo. Si el arquetipo elegido tiene sprites guardados, se puede reutilizar `SpriteAvatarGroup` para mostrarlo en rondas/clasificación.
+
 Campos ya existentes: `tournamentId`, `name`, `deckArchetype`, `dropped`.
 
 Campos a añadir para v1:
@@ -33,10 +35,15 @@ draws: { type: Number, default: 0 },
 prizeDifferential: { type: Number, default: 0 }, // suma(premios propios) - suma(premios rival), 1er desempate
 opponentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'TournamentPlayer' }], // rivales ya enfrentados, para swiss
 byeReceived: { type: Boolean, default: false }, // si ya recibio un bye, para no repetir
-isOrganizer: { type: Boolean, default: false }  // si este jugador es el propio usuario dueño del torneo
+isOrganizer: { type: Boolean, default: false }, // si este jugador es el propio usuario dueño del torneo
+deckId: { type: mongoose.Schema.Types.ObjectId, ref: 'Deck', default: null } // solo si isOrganizer: true
 ```
 
+> **Stats reales del organizador.** Si el organizador participa con su(s) propio(s) mazo(s), cada inscripción con `isOrganizer: true` lleva su `deckId` real vinculado. Al registrar el resultado de un `TournamentMatch` donde interviene una inscripción `isOrganizer`, el backend debe **generar automáticamente un `Match` normal** (modelo de `tracked`, con `tournamentId`/`phase`/`round`) vinculado a ese `deckId`, para que el resultado cuente en las stats/rachas/matchups reales del usuario sin tener que registrarlo dos veces a mano. Si el organizador inscribe varios mazos, cada inscripción (`isOrganizer: true` + su propio `deckId`) genera `Match` independientes para el mazo correspondiente.
+
 Un jugador puede inscribirse con **varios mazos** — esto significa que `deckArchetype` no basta como identificador único; se permite duplicar `name` con distinto `deckArchetype`, o bien un mismo jugador aparece como dos `TournamentPlayer` distintos (uno por mazo). **Decisión: cada inscripción (jugador + mazo) es un `TournamentPlayer` independiente.** Si la misma persona juega con dos mazos, son dos entradas distintas en la tabla — más simple de emparejar y puntuar, aunque signifique que "Juan con mazo A" y "Juan con mazo B" son entidades separadas de cara al torneo.
+
+> **Importante — la unidad del torneo es el mazo, no la persona.** El pairing empareja `TournamentPlayer` (mazos inscritos), no personas reales. Si dos mazos del mismo dueño real deben enfrentarse según el calendario (por ejemplo, en una liga todos-contra-todos, o por azar en swiss), el enfrentamiento **se juega igualmente**: el dueño del otro mazo implicado en la ronda se sienta físicamente a pilotar uno de los dos mazos del mismo dueño, para que la partida se dispute de verdad. Esto es logística de mesa que el organizador resuelve en persona — el sistema **no necesita saber** qué mazos pertenecen al mismo dueño real, ni excluir ese emparejamiento del pairing. No se modela ningún campo de "dueño real compartido" entre `TournamentPlayer`.
 
 ### `TournamentMatch` (ya creado, issue #20 — pendiente ampliar)
 
