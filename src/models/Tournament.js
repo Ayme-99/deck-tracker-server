@@ -70,16 +70,29 @@ const tournamentSchema = new mongoose.Schema({
   }],
   notes: {
     type: String
+  },
+
+  // --- Configuracion de eliminatoria directa (issue #42) ---
+  // Solo relevante si structure incluye una fase eliminatoria (elimination,
+  // swiss_elimination, groups_elimination). Se pregunta al crear el torneo.
+  eliminationFormat: {
+    type: String,
+    enum: ['single_match', 'two_legs'],
+    default: 'single_match'
+  },
+  thirdPlacePlayoff: {
+    type: Boolean,
+    default: false
   }
 
-  // --- TODO (modo 'hosted', post-Japon, ver issue #11) ---
+  // --- TODO (modo 'hosted', resto pendiente, ver issue #11) ---
   // Este modelo es compartido entre 'tracked' y 'hosted' (el campo `mode`
-  // distingue el comportamiento), pero de momento SOLO contiene los campos
-  // necesarios para 'tracked'. Para desarrollar 'hosted' habra que anadir
-  // aqui, entre otros:
-  //   - players: [{ name, deckArchetype, dropped }] (jugadores sin cuenta)
-  //   - pairingSystem / rondas generadas automaticamente
-  //   - referencia a TournamentPlayer / TournamentMatch (ver issues #19-#25)
+  // distingue el comportamiento). Ademas de lo ya añadido arriba, falta:
+  //   - referencia a TournamentPlayer / TournamentMatch (ver issues #19-#25,
+  //     #19 y #20 ya creados y ampliados)
+  //   - configuracion de grupos (tamaño, clasificados) para groups_elimination
+  //   - configuracion de liga (ida/vuelta) -- reutilizar eliminationFormat
+  //     ya no aplica aqui, ver issue #44 (Liga) para su propio campo
   // deckId y structure NO sirven tal cual para 'hosted': cada jugador podra
   // llevar su propio mazo, y structure pasara a condicionar tambien la
   // logica de pairings y calculo de standings, no solo el agrupado visual.

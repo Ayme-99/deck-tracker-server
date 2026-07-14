@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const TournamentPlayer = require('../models/TournamentPlayer');
 const TournamentMatch = require('../models/TournamentMatch');
 const { generateSwissPairings } = require('../services/swissPairingService');
+const { generateBracket } = require('../services/eliminationPairingService');
 
 exports.getTournaments = async (req, res) => {
   try {
@@ -415,6 +416,61 @@ exports.registerMatchResult = async (req, res) => {
     await createMatchIfOrganizer(player2, player1, player2Prizes, player1Prizes);
 
     res.json({ match: tMatch, player1, player2 });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// Genera el bracket inicial de eliminatoria directa (issue #42).
+// body: { playerIds: [...], seeded: bool } -- playerIds ya debe venir en el
+// orden deseado (por standing si seeded=true, o cualquier orden si false,
+// ya que el shuffle se aplica internamente).
+// Respeta tournament.eliminationFormat (single_match / two_legs): a doble
+// partido crea first_leg + second_leg enlazados via tiedMatchId.
+exports.generateEliminationBracket = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const { playerIds, seeded } = req.body;
+    const { phase, pairings } = generateBracket(playerIds, { seeded: !!seeded });
+
+    const createdMatches = [];
+    for (const pairing of pairings) {
+      if (tournament.eliminationFormat === 'two_legs') {
+        const firstLeg = await TournamentMatch.create({
+          tournamentId: tournament._id,
+          phase,
+          player1Id: pairing.player1Id,
+          player2Id: pairing.player2Id,
+          leg: 'first_leg'
+        });
+        const secondLeg = await TournamentMatch.create({
+          tournamentId: tournament._id,
+          phase,
+          // vuelta: se invierten local/visitante, pero a efectos de
+          // agregado solo importa la suma de premios de cada jugador
+          player1Id: pairing.player2Id,
+          player2Id: pairing.player1Id,
+          leg: 'second_leg',
+          tiedMatchId: firstLeg._id
+        });
+        firstLeg.tiedMatchId = secondLeg._id;
+        await firstLeg.save();
+        createdMatches.push(firstLeg, secondLeg);
+      } else {
+        const match = await TournamentMatch.create({
+          tournamentId: tournament._id,
+          phase,
+          player1Id: pairing.player1Id,
+          player2Id: pairing.player2Id,
+          leg: 'single'
+        });
+        createdMatches.push(match);
+      }
+    }
+
+    res.status(201).json({ phase, matches: createdMatches });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
