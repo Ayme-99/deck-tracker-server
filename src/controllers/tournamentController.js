@@ -6,6 +6,7 @@ const TournamentMatch = require('../models/TournamentMatch');
 const { generateSwissPairings } = require('../services/swissPairingService');
 const { generateBracket } = require('../services/eliminationPairingService');
 const { assignGroups, calculateEliminationEntry } = require('../services/groupsEliminationService');
+const { calculateOMW } = require('../services/tiebreakerService');
 const { generateRoundRobinSchedule } = require('../services/roundRobinService');
 
 exports.getTournaments = async (req, res) => {
@@ -244,26 +245,41 @@ exports.generateSwissRound = async (req, res) => {
   }
 };
 
-// Clasificacion del torneo hosted, ordenada por puntos y desempatada por
-// prizeDifferential (1er criterio). OMW% (2º criterio) se añade en #45.
-// Jugadores con el mismo points+prizeDifferential comparten posicion.
+// Clasificacion del torneo hosted. Orden: points desc, prizeDifferential
+// desc (1er criterio), omwPercentage desc (2º criterio, issue #45).
+// Jugadores empatados en los 3 criterios comparten posicion.
 exports.getHostedStandings = async (req, res) => {
   try {
     const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const players = await TournamentPlayer.find({ tournamentId: tournament._id })
-      .sort({ points: -1, prizeDifferential: -1 });
+    const players = await TournamentPlayer.find({ tournamentId: tournament._id });
 
-    let lastPoints = null;
-    let lastDiff = null;
+    const omwMap = calculateOMW(players.map((p) => ({
+      id: p._id.toString(),
+      wins: p.wins,
+      losses: p.losses,
+      draws: p.draws,
+      opponentIds: p.opponentIds.map((id) => id.toString())
+    })));
+
+    const sorted = [...players].sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.prizeDifferential !== a.prizeDifferential) return b.prizeDifferential - a.prizeDifferential;
+      return omwMap.get(b._id.toString()) - omwMap.get(a._id.toString());
+    });
+
+    let last = null;
     let lastPosition = 0;
 
-    const standings = players.map((p, index) => {
-      const tiedWithPrevious = p.points === lastPoints && p.prizeDifferential === lastDiff;
+    const standings = sorted.map((p, index) => {
+      const omwPercentage = omwMap.get(p._id.toString());
+      const tiedWithPrevious = last
+        && p.points === last.points
+        && p.prizeDifferential === last.prizeDifferential
+        && omwPercentage === last.omwPercentage;
       const position = tiedWithPrevious ? lastPosition : index + 1;
-      lastPoints = p.points;
-      lastDiff = p.prizeDifferential;
+      last = { points: p.points, prizeDifferential: p.prizeDifferential, omwPercentage };
       lastPosition = position;
 
       return {
@@ -276,6 +292,7 @@ exports.getHostedStandings = async (req, res) => {
         losses: p.losses,
         draws: p.draws,
         prizeDifferential: p.prizeDifferential,
+        omwPercentage: Math.round(omwPercentage * 1000) / 10, // 0-100, 1 decimal
         dropped: p.dropped
       };
     });
