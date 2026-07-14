@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const TournamentPlayer = require('../models/TournamentPlayer');
 const TournamentMatch = require('../models/TournamentMatch');
 const { generateSwissPairings } = require('../services/swissPairingService');
-const { generateBracket } = require('../services/eliminationPairingService');
+const { generateBracket, nextPhase } = require('../services/eliminationPairingService');
 const { assignGroups, calculateEliminationEntry } = require('../services/groupsEliminationService');
 const { calculateOMW } = require('../services/tiebreakerService');
 const { generateRoundRobinSchedule } = require('../services/roundRobinService');
@@ -883,5 +883,152 @@ exports.importTournament = async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+};
+// Determina el ganador de un enfrentamiento del bracket a partir de sus
+// partidas: single_match tiene 1 sola TournamentMatch con winnerId directo.
+// two_legs puede tener first_leg+second_leg (agregado de premios, ya que
+// second_leg invierte player1/player2 respecto a first_leg) y, si el
+// agregado empata, una sudden_death que decide de forma definitiva.
+// Devuelve null si el enfrentamiento aun no tiene ganador determinable.
+function resolveBracketWinner(matchesForThisPair) {
+  const single = matchesForThisPair.find((m) => m.leg === 'single');
+  if (single) return single.winnerId ? single.winnerId.toString() : null;
+
+  const suddenDeath = matchesForThisPair.find((m) => m.leg === 'sudden_death');
+  if (suddenDeath && suddenDeath.winnerId) return suddenDeath.winnerId.toString();
+
+  const firstLeg = matchesForThisPair.find((m) => m.leg === 'first_leg');
+  const secondLeg = matchesForThisPair.find((m) => m.leg === 'second_leg');
+  if (!firstLeg || !secondLeg || firstLeg.status !== 'completed' || secondLeg.status !== 'completed') {
+    return null; // ida/vuelta aun no completas
+  }
+
+  const p1 = firstLeg.player1Id.toString();
+  const p2 = firstLeg.player2Id.toString();
+  // second_leg invierte player1Id/player2Id respecto a first_leg
+  const p1Total = (firstLeg.player1Prizes || 0) + (secondLeg.player2Id.toString() === p1 ? (secondLeg.player2Prizes || 0) : (secondLeg.player1Prizes || 0));
+  const p2Total = (firstLeg.player2Prizes || 0) + (secondLeg.player1Id.toString() === p2 ? (secondLeg.player1Prizes || 0) : (secondLeg.player2Prizes || 0));
+
+  if (p1Total > p2Total) return p1;
+  if (p2Total > p1Total) return p2;
+  return null; // agregado empatado y sin muerte subita todavia -- hace falta crearla manualmente
+}
+
+// Avanza el bracket a la siguiente fase, emparejando los ganadores de la
+// fase indicada en el mismo orden en que se jugaron (match 0 vs match 1,
+// match 2 vs match 3...) -- a diferencia de generateEliminationBracket
+// (issue #42), que solo sirve para la PRIMERA ronda con seeding/aleatorio.
+// Si se avanza desde semifinal y tournament.thirdPlacePlayoff es true,
+// tambien genera el partido de 3er/4º puesto con los perdedores.
+exports.advanceBracketRound = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const { phase } = req.body;
+    const phaseMatches = await TournamentMatch.find({ tournamentId: tournament._id, phase });
+    if (phaseMatches.length === 0) {
+      return res.status(400).json({ error: `No hay partidas en la fase ${phase}` });
+    }
+
+    // Agrupa las partidas por enfrentamiento real (single = 1 sola;
+    // two_legs = first_leg+second_leg[+sudden_death] enlazadas por tiedMatchId)
+    const grouped = [];
+    const seen = new Set();
+    for (const m of phaseMatches) {
+      if (seen.has(m._id.toString())) continue;
+      const group = [m];
+      seen.add(m._id.toString());
+      if (m.tiedMatchId) {
+        const linked = phaseMatches.filter(
+          (other) => !seen.has(other._id.toString()) &&
+            (other._id.toString() === m.tiedMatchId.toString() || (other.tiedMatchId && other.tiedMatchId.toString() === m._id.toString()))
+        );
+        for (const l of linked) {
+          group.push(l);
+          seen.add(l._id.toString());
+        }
+      }
+      grouped.push(group);
+    }
+
+    const winners = [];
+    for (const group of grouped) {
+      const winnerId = resolveBracketWinner(group);
+      if (!winnerId) {
+        return res.status(400).json({ error: 'Todavia hay enfrentamientos de esta fase sin resolver (incluida posible muerte subita pendiente)' });
+      }
+      winners.push(winnerId);
+    }
+
+    const next = nextPhase(phase);
+    if (!next) {
+      return res.status(400).json({ error: 'La final no tiene fase siguiente' });
+    }
+
+    const createdMatches = [];
+    for (let i = 0; i < winners.length; i += 2) {
+      const pairing = { player1Id: winners[i], player2Id: winners[i + 1] };
+      if (tournament.eliminationFormat === 'two_legs') {
+        const firstLeg = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: next,
+          player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'first_leg'
+        });
+        const secondLeg = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: next,
+          player1Id: pairing.player2Id, player2Id: pairing.player1Id,
+          leg: 'second_leg', tiedMatchId: firstLeg._id
+        });
+        firstLeg.tiedMatchId = secondLeg._id;
+        await firstLeg.save();
+        createdMatches.push(firstLeg, secondLeg);
+      } else {
+        const match = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: next, player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'single'
+        });
+        createdMatches.push(match);
+      }
+    }
+
+    // 3er/4º puesto: solo al avanzar desde semifinal, con los perdedores
+    if (phase === 'semifinal' && tournament.thirdPlacePlayoff) {
+      const losers = grouped.map((group, i) => {
+        const winnerId = winners[i];
+        const anyMatch = group[0];
+        const p1 = anyMatch.player1Id.toString();
+        const p2 = anyMatch.player2Id ? anyMatch.player2Id.toString() : null;
+        return p1 === winnerId ? p2 : p1;
+      }).filter(Boolean);
+
+      if (losers.length === 2) {
+        const thirdPlaceMatch = await TournamentMatch.create({
+          tournamentId: tournament._id, phase: 'final',
+          player1Id: losers[0], player2Id: losers[1], leg: 'single', isThirdPlaceMatch: true
+        });
+        createdMatches.push(thirdPlaceMatch);
+      }
+    }
+
+    res.status(201).json({ phase: next, matches: createdMatches });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// Lista todos los TournamentMatch de un torneo hosted, ordenados por
+// fase (segun el orden logico del bracket/fases) y ronda. Necesario para
+// que el frontend pueda pintar rondas/bracket (issue #46).
+exports.getHostedMatches = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const matches = await TournamentMatch.find({ tournamentId: tournament._id })
+      .sort({ phase: 1, round: 1 });
+
+    res.json(matches);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
