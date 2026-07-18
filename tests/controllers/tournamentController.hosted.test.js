@@ -136,8 +136,9 @@ describe('registerMatchResult', () => {
 });
 
 describe('closePhaseToElimination', () => {
-  test('swiss_elimination: usa el standing real (points+prizeDifferential) para el topCut', async () => {
-    Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, structure: 'swiss_elimination', eliminationFormat: 'single_match' });
+  test('swiss_elimination sin ronda previa (extra=0): empareja de verdad, sin byes falsos', async () => {
+    const tournamentDoc = { _id: 'tid1', userId: USER_ID, structure: 'swiss_elimination', eliminationFormat: 'single_match', save: jest.fn() };
+    Tournament.findOne.mockResolvedValue(tournamentDoc);
     const sortedPlayers = Array.from({ length: 8 }, (_, i) => ({ _id: 'p' + (i + 1), points: 24 - i, prizeDifferential: 10 - i }));
     TournamentPlayer.find.mockReturnValue({ sort: jest.fn().mockResolvedValue(sortedPlayers) });
     TournamentMatch.create.mockImplementation(async (data) => ({ ...data, _id: 'm' + Math.random(), save: jest.fn() }));
@@ -149,9 +150,32 @@ describe('closePhaseToElimination', () => {
     expect(res.status).toHaveBeenCalledWith(201);
     const body = res.json.mock.calls[0][0];
     expect(body.targetPhase).toBe('semifinal');
-    // Solo los 4 mejores (p1-p4) deben aparecer como byes (sin ronda previa, 4 ya es potencia de 2)
-    const byePlayers = body.matches.map((m) => m.player1Id);
-    expect(byePlayers.sort()).toEqual(['p1', 'p2', 'p3', 'p4'].sort());
+    expect(body.preliminaryPhase).toBeNull();
+    // 2 partidas REALES (seededPairings: p1 vs p4, p2 vs p3), no 4 byes falsos
+    expect(body.matches).toHaveLength(2);
+    expect(body.matches.every((m) => m.status === undefined || m.status !== 'completed')).toBe(true);
+    // No hizo falta guardar nada pendiente (sin ronda previa)
+    expect(tournamentDoc.save).not.toHaveBeenCalled();
+  });
+
+  test('swiss_elimination con ronda previa (extra>0): guarda classifiedIds pendientes', async () => {
+    const tournamentDoc = { _id: 'tid1', userId: USER_ID, structure: 'swiss_elimination', eliminationFormat: 'single_match', save: jest.fn() };
+    Tournament.findOne.mockResolvedValue(tournamentDoc);
+    const sortedPlayers = Array.from({ length: 10 }, (_, i) => ({ _id: 'seed' + (i + 1), points: 20 - i, prizeDifferential: 10 - i }));
+    TournamentPlayer.find.mockReturnValue({ sort: jest.fn().mockResolvedValue(sortedPlayers) });
+    TournamentMatch.create.mockImplementation(async (data) => ({ ...data, _id: 'm' + Math.random(), save: jest.fn() }));
+
+    const req = { params: { id: 'tid1' }, userId: USER_ID, body: { topCut: 10 } };
+    const res = mockRes();
+    await controller.closePhaseToElimination(req, res);
+
+    const body = res.json.mock.calls[0][0];
+    expect(body.preliminaryPhase).toBe('round_of_16');
+    // Solo se crean las 2 partidas de la ronda previa, nada en targetPhase todavia
+    expect(body.matches).toHaveLength(2);
+    // Se persisten los 10 classifiedIds para resolvePreliminaryEntry
+    expect(tournamentDoc.save).toHaveBeenCalled();
+    expect(tournamentDoc.pendingEliminationClassifiedIds).toHaveLength(10);
   });
 
   test('rechaza una estructura que no es swiss_elimination ni groups_elimination', async () => {
@@ -159,6 +183,48 @@ describe('closePhaseToElimination', () => {
     const req = { params: { id: 'tid1' }, userId: USER_ID, body: {} };
     const res = mockRes();
     await controller.closePhaseToElimination(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+});
+
+describe('resolvePreliminaryEntry', () => {
+  test('lee classifiedIds del torneo (sin body) y genera la fase destino', async () => {
+    const classifiedIds = Array.from({ length: 10 }, (_, i) => 'seed' + (i + 1));
+    const tournamentDoc = {
+      _id: 'tid1', userId: USER_ID, eliminationFormat: 'single_match',
+      pendingEliminationClassifiedIds: classifiedIds,
+      save: jest.fn()
+    };
+    Tournament.findOne.mockResolvedValue(tournamentDoc);
+
+    const prelimMatches = [
+      { _id: 'pm1', phase: 'round_of_16', player1Id: 'seed7', player2Id: 'seed10', winnerId: 'seed7', leg: 'single', status: 'completed', tiedMatchId: null },
+      { _id: 'pm2', phase: 'round_of_16', player1Id: 'seed8', player2Id: 'seed9', winnerId: 'seed9', leg: 'single', status: 'completed', tiedMatchId: null }
+    ];
+    TournamentMatch.find.mockResolvedValue(prelimMatches);
+    TournamentMatch.create.mockImplementation(async (data) => ({ ...data, _id: 'm' + Math.random(), save: jest.fn() }));
+
+    const req = { params: { id: 'tid1' }, userId: USER_ID, body: {} };
+    const res = mockRes();
+    await controller.resolvePreliminaryEntry(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    const body = res.json.mock.calls[0][0];
+    expect(body.phase).toBe('quarterfinal');
+    expect(body.matches).toHaveLength(4); // 6 byes + 2 ganadores = 8 -> 4 partidos
+    // Se limpia el estado pendiente tras resolver
+    expect(tournamentDoc.pendingEliminationClassifiedIds).toEqual([]);
+    expect(tournamentDoc.save).toHaveBeenCalled();
+  });
+
+  test('400 si no hay nada pendiente que resolver', async () => {
+    const tournamentDoc = { _id: 'tid1', userId: USER_ID, pendingEliminationClassifiedIds: [], save: jest.fn() };
+    Tournament.findOne.mockResolvedValue(tournamentDoc);
+
+    const req = { params: { id: 'tid1' }, userId: USER_ID, body: {} };
+    const res = mockRes();
+    await controller.resolvePreliminaryEntry(req, res);
+
     expect(res.status).toHaveBeenCalledWith(400);
   });
 });
