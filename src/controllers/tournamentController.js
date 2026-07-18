@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const TournamentPlayer = require('../models/TournamentPlayer');
 const TournamentMatch = require('../models/TournamentMatch');
 const { generateSwissPairings } = require('../services/swissPairingService');
-const { generateBracket, nextPhase } = require('../services/eliminationPairingService');
+const { generateBracket, nextPhase, seededPairings } = require('../services/eliminationPairingService');
 const { assignGroups, calculateEliminationEntry } = require('../services/groupsEliminationService');
 const { calculateOMW } = require('../services/tiebreakerService');
 const { generateRoundRobinSchedule } = require('../services/roundRobinService');
@@ -642,52 +642,43 @@ exports.generateLeagueRounds = async (req, res) => {
 
 // --- Transicion de fase (issue #24) ---
 
-// Crea las partidas (byes + ronda previa si aplica) para la entrada a la
-// fase eliminatoria, respetando tournament.eliminationFormat (single_match
-// / two_legs) en la ronda previa. Reutilizada por swiss_elimination y
-// groups_elimination -- ambas comparten la misma logica de entrada.
+// Crea las partidas para la entrada a la fase eliminatoria, respetando
+// tournament.eliminationFormat (single_match / two_legs). Reutilizada por
+// swiss_elimination y groups_elimination -- ambas comparten la misma logica.
+//
+// FIX (bug detectado tras #80/#83): antes, TODOS los byeIds se declaraban
+// "ganadores sin rival" (player2Id: null, status: completed) sin jugar
+// nada. Eso era conceptualmente incorrecto en el caso extra===0 (nº de
+// clasificados ya potencia de 2): ahi no hace falta ninguna ronda previa,
+// asi que los clasificados deben EMPAREJARSE DE VERDAD entre si en la
+// fase destino, no "ganar gratis". El bye solo tiene sentido cuando de
+// verdad se salta una ronda previa REAL (extra>0) -- y en ese caso, el
+// rival de cada bye (el ganador de la previa) todavia no se conoce, asi
+// que tampoco se puede crear su partida aqui: hay que esperar a que la
+// ronda previa termine y resolverlo con resolvePreliminaryEntry.
 async function createEliminationEntryMatches(tournament, classifiedIds) {
   const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
   const createdMatches = [];
 
-  for (const playerId of byeIds) {
-    const match = await TournamentMatch.create({
-      tournamentId: tournament._id,
-      phase: targetPhase,
-      player1Id: playerId,
-      player2Id: null,
-      status: 'completed',
-      winnerId: playerId
-    });
-    createdMatches.push(match);
-  }
-
-  if (preliminary) {
-    for (const pairing of preliminary.pairings) {
-      if (tournament.eliminationFormat === 'two_legs') {
-        const firstLeg = await TournamentMatch.create({
-          tournamentId: tournament._id, phase: preliminary.phase,
-          player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'first_leg'
-        });
-        const secondLeg = await TournamentMatch.create({
-          tournamentId: tournament._id, phase: preliminary.phase,
-          player1Id: pairing.player2Id, player2Id: pairing.player1Id,
-          leg: 'second_leg', tiedMatchId: firstLeg._id
-        });
-        firstLeg.tiedMatchId = secondLeg._id;
-        await firstLeg.save();
-        createdMatches.push(firstLeg, secondLeg);
-      } else {
-        const match = await TournamentMatch.create({
-          tournamentId: tournament._id, phase: preliminary.phase,
-          player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'single'
-        });
-        createdMatches.push(match);
-      }
+  if (!preliminary) {
+    // Sin ronda previa: los clasificados se emparejan de verdad en la
+    // fase destino, con el mismo seeding (mejor vs peor).
+    const pairings = seededPairings(byeIds);
+    for (const pairing of pairings) {
+      const created = await createRealMatch(tournament, targetPhase, pairing);
+      createdMatches.push(...created);
     }
+    return { targetPhase, preliminaryPhase: null, byeIds: [], matches: createdMatches };
   }
 
-  return { targetPhase, preliminaryPhase: preliminary?.phase || null, matches: createdMatches };
+  // Con ronda previa: solo se crean sus partidas. Los byeIds quedan en
+  // espera (no se crea nada para ellos todavia) hasta que se llame a
+  // resolvePreliminaryEntry una vez la previa este resuelta.
+  for (const pairing of preliminary.pairings) {
+    const created = await createRealMatch(tournament, preliminary.phase, pairing);
+    createdMatches.push(...created);
+  }
+  return { targetPhase, preliminaryPhase: preliminary.phase, byeIds, matches: createdMatches };
 }
 
 // Cierra la fase de swiss o grupos y genera la entrada a la fase eliminatoria.
@@ -891,6 +882,56 @@ exports.importTournament = async (req, res) => {
 // second_leg invierte player1/player2 respecto a first_leg) y, si el
 // agregado empata, una sudden_death que decide de forma definitiva.
 // Devuelve null si el enfrentamiento aun no tiene ganador determinable.
+// Agrupa las partidas de una fase por enfrentamiento real (single = 1 sola;
+// two_legs = first_leg+second_leg[+sudden_death] enlazadas por tiedMatchId).
+// Compartida entre advanceBracketRound y resolvePreliminaryEntry.
+function groupMatchesByTiedPair(phaseMatches) {
+  const grouped = [];
+  const seen = new Set();
+  for (const m of phaseMatches) {
+    if (seen.has(m._id.toString())) continue;
+    const group = [m];
+    seen.add(m._id.toString());
+    if (m.tiedMatchId) {
+      const linked = phaseMatches.filter(
+        (other) => !seen.has(other._id.toString()) &&
+          (other._id.toString() === m.tiedMatchId.toString() || (other.tiedMatchId && other.tiedMatchId.toString() === m._id.toString()))
+      );
+      for (const l of linked) {
+        group.push(l);
+        seen.add(l._id.toString());
+      }
+    }
+    grouped.push(group);
+  }
+  return grouped;
+}
+
+// Crea en BD un enfrentamiento real (una partida single, o first_leg+
+// second_leg enlazadas si el torneo es a ida y vuelta). Compartida entre
+// createEliminationEntryMatches, resolvePreliminaryEntry y (potencialmente)
+// otros puntos que generen partidos de eliminatoria.
+async function createRealMatch(tournament, phase, pairing) {
+  if (tournament.eliminationFormat === 'two_legs') {
+    const firstLeg = await TournamentMatch.create({
+      tournamentId: tournament._id, phase,
+      player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'first_leg'
+    });
+    const secondLeg = await TournamentMatch.create({
+      tournamentId: tournament._id, phase,
+      player1Id: pairing.player2Id, player2Id: pairing.player1Id,
+      leg: 'second_leg', tiedMatchId: firstLeg._id
+    });
+    firstLeg.tiedMatchId = secondLeg._id;
+    await firstLeg.save();
+    return [firstLeg, secondLeg];
+  }
+  const match = await TournamentMatch.create({
+    tournamentId: tournament._id, phase, player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'single'
+  });
+  return [match];
+}
+
 function resolveBracketWinner(matchesForThisPair) {
   const single = matchesForThisPair.find((m) => m.leg === 'single');
   if (single) return single.winnerId ? single.winnerId.toString() : null;
@@ -934,24 +975,7 @@ exports.advanceBracketRound = async (req, res) => {
 
     // Agrupa las partidas por enfrentamiento real (single = 1 sola;
     // two_legs = first_leg+second_leg[+sudden_death] enlazadas por tiedMatchId)
-    const grouped = [];
-    const seen = new Set();
-    for (const m of phaseMatches) {
-      if (seen.has(m._id.toString())) continue;
-      const group = [m];
-      seen.add(m._id.toString());
-      if (m.tiedMatchId) {
-        const linked = phaseMatches.filter(
-          (other) => !seen.has(other._id.toString()) &&
-            (other._id.toString() === m.tiedMatchId.toString() || (other.tiedMatchId && other.tiedMatchId.toString() === m._id.toString()))
-        );
-        for (const l of linked) {
-          group.push(l);
-          seen.add(l._id.toString());
-        }
-      }
-      grouped.push(group);
-    }
+    const grouped = groupMatchesByTiedPair(phaseMatches);
 
     const winners = [];
     for (const group of grouped) {
@@ -970,25 +994,8 @@ exports.advanceBracketRound = async (req, res) => {
     const createdMatches = [];
     for (let i = 0; i < winners.length; i += 2) {
       const pairing = { player1Id: winners[i], player2Id: winners[i + 1] };
-      if (tournament.eliminationFormat === 'two_legs') {
-        const firstLeg = await TournamentMatch.create({
-          tournamentId: tournament._id, phase: next,
-          player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'first_leg'
-        });
-        const secondLeg = await TournamentMatch.create({
-          tournamentId: tournament._id, phase: next,
-          player1Id: pairing.player2Id, player2Id: pairing.player1Id,
-          leg: 'second_leg', tiedMatchId: firstLeg._id
-        });
-        firstLeg.tiedMatchId = secondLeg._id;
-        await firstLeg.save();
-        createdMatches.push(firstLeg, secondLeg);
-      } else {
-        const match = await TournamentMatch.create({
-          tournamentId: tournament._id, phase: next, player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'single'
-        });
-        createdMatches.push(match);
-      }
+      const created = await createRealMatch(tournament, next, pairing);
+      createdMatches.push(...created);
     }
 
     // 3er/4º puesto: solo al avanzar desde semifinal, con los perdedores
@@ -1030,5 +1037,59 @@ exports.getHostedMatches = async (req, res) => {
     res.json(matches);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+// Resuelve la entrada de los "byeIds" (jugadores que se saltaron la ronda
+// previa) a la fase destino, una vez la ronda previa este completada.
+// Combina byeIds + ganadores de la previa, reordenados por seed, y los
+// empareja de verdad (seededPairings) creando las partidas reales.
+//
+// body: { classifiedIds } -- la MISMA lista usada originalmente en
+// closePhaseToElimination/generateGroupsEliminationEntry, para poder
+// recalcular deterministamente targetPhase/byeIds/preliminaryPhase sin
+// necesidad de persistir nada extra (calculateEliminationEntry es una
+// funcion pura).
+exports.resolvePreliminaryEntry = async (req, res) => {
+  try {
+    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const { classifiedIds } = req.body;
+    const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
+
+    if (!preliminary) {
+      return res.status(400).json({ error: 'Este torneo no tenia ronda previa que resolver' });
+    }
+
+    const prelimMatches = await TournamentMatch.find({ tournamentId: tournament._id, phase: preliminary.phase });
+    if (prelimMatches.length === 0) {
+      return res.status(400).json({ error: 'No se encontraron partidas de la ronda previa' });
+    }
+
+    const grouped = groupMatchesByTiedPair(prelimMatches);
+    const prelimWinners = [];
+    for (const group of grouped) {
+      const winnerId = resolveBracketWinner(group);
+      if (!winnerId) {
+        return res.status(400).json({ error: 'Todavia hay partidas de la ronda previa sin resolver (incluida posible muerte subita pendiente)' });
+      }
+      prelimWinners.push(winnerId);
+    }
+
+    // byeIds ya vienen ordenados de mejor a peor seed; los ganadores de la
+    // previa se añaden a continuacion (peores seeds que cualquier bye) y
+    // se reordena el conjunto combinado con seededPairings.
+    const combined = [...byeIds, ...prelimWinners];
+    const pairings = seededPairings(combined);
+
+    const createdMatches = [];
+    for (const pairing of pairings) {
+      const created = await createRealMatch(tournament, targetPhase, pairing);
+      createdMatches.push(...created);
+    }
+
+    res.status(201).json({ phase: targetPhase, matches: createdMatches });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 };

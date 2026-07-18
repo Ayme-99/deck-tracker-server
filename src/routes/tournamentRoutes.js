@@ -16,6 +16,7 @@ router.post('/:id/swiss-round', tournamentController.generateSwissRound);
 router.get('/:id/hosted-standings', tournamentController.getHostedStandings);
 router.get('/:id/hosted-matches', tournamentController.getHostedMatches);
 router.post('/:id/advance-bracket', tournamentController.advanceBracketRound);
+router.post('/:id/resolve-preliminary-entry', tournamentController.resolvePreliminaryEntry);
 router.post('/:id/players', tournamentController.createPlayer);
 router.get('/:id/players', tournamentController.getPlayers);
 router.put('/:id/players/:playerId', tournamentController.updatePlayer);
