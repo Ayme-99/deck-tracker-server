@@ -91,7 +91,17 @@ const tournamentSchema = new mongoose.Schema({
   leagueDoubleRound: {
     type: Boolean,
     default: false
-  }
+  },
+
+  // --- Estado temporal de entrada a eliminatoria (bug fix post #80/#83) ---
+  // Guarda los classifiedIds usados en closePhaseToElimination cuando hizo
+  // falta ronda previa, para que resolvePreliminaryEntry pueda leerlos sin
+  // depender de que el frontend los recuerde/reenvie. Se vacia una vez
+  // resuelta la entrada a la fase destino.
+  pendingEliminationClassifiedIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TournamentPlayer'
+  }]
 
   // --- TODO (modo 'hosted', resto pendiente, ver issue #11) ---
   // Este modelo es compartido entre 'tracked' y 'hosted' (el campo `mode`
