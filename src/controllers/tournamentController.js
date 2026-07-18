@@ -719,6 +719,15 @@ exports.closePhaseToElimination = async (req, res) => {
     }
 
     const result = await createEliminationEntryMatches(tournament, classifiedIds);
+
+    // Si hizo falta ronda previa, se guarda la lista de clasificados para
+    // que resolvePreliminaryEntry pueda leerla despues sin depender de
+    // que el frontend la recuerde/reenvie.
+    if (result.preliminaryPhase) {
+      tournament.pendingEliminationClassifiedIds = classifiedIds;
+      await tournament.save();
+    }
+
     res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -1044,17 +1053,20 @@ exports.getHostedMatches = async (req, res) => {
 // Combina byeIds + ganadores de la previa, reordenados por seed, y los
 // empareja de verdad (seededPairings) creando las partidas reales.
 //
-// body: { classifiedIds } -- la MISMA lista usada originalmente en
-// closePhaseToElimination/generateGroupsEliminationEntry, para poder
-// recalcular deterministamente targetPhase/byeIds/preliminaryPhase sin
-// necesidad de persistir nada extra (calculateEliminationEntry es una
-// funcion pura).
+// No requiere body: los classifiedIds se leen de
+// tournament.pendingEliminationClassifiedIds, guardados por
+// closePhaseToElimination cuando hizo falta ronda previa -- asi no depende
+// de que el frontend recuerde/reenvie una lista larga de IDs.
 exports.resolvePreliminaryEntry = async (req, res) => {
   try {
     const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const { classifiedIds } = req.body;
+    const classifiedIds = tournament.pendingEliminationClassifiedIds.map((id) => id.toString());
+    if (classifiedIds.length === 0) {
+      return res.status(400).json({ error: 'No hay ninguna entrada a eliminatoria pendiente de resolver' });
+    }
+
     const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
 
     if (!preliminary) {
@@ -1087,6 +1099,10 @@ exports.resolvePreliminaryEntry = async (req, res) => {
       const created = await createRealMatch(tournament, targetPhase, pairing);
       createdMatches.push(...created);
     }
+
+    // Limpia el estado temporal, ya resuelto
+    tournament.pendingEliminationClassifiedIds = [];
+    await tournament.save();
 
     res.status(201).json({ phase: targetPhase, matches: createdMatches });
   } catch (error) {
