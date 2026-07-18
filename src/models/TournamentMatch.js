@@ -82,6 +82,13 @@ const tournamentMatchSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TournamentMatch',
     default: null
+  },
+
+  // Marca el partido de 3er/4º puesto (issue #46), para distinguirlo del
+  // resto de partidos de 'semifinal' sin depender de texto libre en notes
+  isThirdPlaceMatch: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 
