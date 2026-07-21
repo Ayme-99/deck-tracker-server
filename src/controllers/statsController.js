@@ -221,3 +221,56 @@ exports.getDeckRanking = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+// Stats contra cada arquetipo rival, agregadas a lo largo de TODOS los
+// mazos propios del usuario (issue #21): a diferencia de getDeckMatchups
+// (que agrupa dentro de un solo mazo), aqui se combina cada partida
+// jugada con cualquier mazo propio contra un mismo rival, para responder
+// "¿como me ha ido en total contra Charizard ex, sin importar con que
+// mazo lo jugue?".
+exports.getOpponentMatchups = async (req, res) => {
+  try {
+    const matchups = await Match.aggregate([
+      { $match: { userId: req.userId } },
+      {
+        $group: {
+          _id: '$opponentDeck',
+          totalMatches: { $sum: 1 },
+          wins: { $sum: { $cond: [{ $eq: ['$result', 'win'] }, 1, 0] } },
+          losses: { $sum: { $cond: [{ $eq: ['$result', 'loss'] }, 1, 0] } },
+          ties: { $sum: { $cond: [{ $eq: ['$result', 'tie'] }, 1, 0] } }
+        }
+      },
+      {
+        // Sprites del arquetipo rival ya guardados (mismo nombre + mismo usuario)
+        $lookup: {
+          from: 'opponentarchetypes',
+          let: { oppName: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$name', '$$oppName'] }, { $eq: ['$userId', req.userId] }] } } }
+          ],
+          as: 'archetypeInfo'
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          opponentDeck: '$_id',
+          totalMatches: 1,
+          wins: 1,
+          losses: 1,
+          ties: 1,
+          winRate: {
+            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
+          },
+          sprite1: { $arrayElemAt: ['$archetypeInfo.sprite1', 0] },
+          sprite2: { $arrayElemAt: ['$archetypeInfo.sprite2', 0] }
+        }
+      },
+      { $sort: { totalMatches: -1 } } // los rivales mas afrontados primero
+    ]);
+
+    res.json(matchups);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

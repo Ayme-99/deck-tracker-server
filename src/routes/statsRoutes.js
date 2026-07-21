@@ -7,6 +7,7 @@ router.use(protect);
 
 router.get('/global/overview', statsController.getGlobalOverview);
 router.get('/global/ranking', statsController.getDeckRanking);
+router.get('/global/opponents', statsController.getOpponentMatchups);
 router.get('/deck/:deckId/overview', statsController.getDeckOverview);
 router.get('/deck/:deckId/matchups', statsController.getDeckMatchups);
 router.get('/deck/:deckId/streak', statsController.getDeckStreak);
