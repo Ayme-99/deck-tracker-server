@@ -1,6 +1,6 @@
 # Deck Tracker – Backend
 
-API REST para gestión de mazos de Pokémon TCG y seguimiento de partidas, con estadísticas agregadas por mazo y globales.
+API REST para gestión de mazos de Pokémon TCG, seguimiento de partidas con estadísticas agregadas, y torneos completos: tanto seguimiento del propio historial (**tracked**) como torneos alojados por la app con varios jugadores (**hosted**).
 
 ## Stack
 
@@ -18,38 +18,47 @@ https://deck-tracker-server.onrender.com/api
 src/
 ├── app.js
 ├── config/
-│   └── db.js
+│ └── db.js
 ├── models/
-│   ├── Deck.js
-│   ├── Match.js
-│   ├── OpponentArchetype.js
-│   ├── Tournament.js
-│   ├── TournamentPlayer.js       # sin usar todavia, preparado para modo hosted (issue #11)
-│   ├── TournamentMatch.js        # sin usar todavia, preparado para modo hosted (issue #11)
-│   └── User.js
+│ ├── Deck.js
+│ ├── Match.js
+│ ├── OpponentArchetype.js
+│ ├── Tournament.js
+│ ├── TournamentPlayer.js # modo hosted: inscripcion de jugador (sin cuenta propia)
+│ ├── TournamentMatch.js # modo hosted: partida entre dos TournamentPlayer
+│ └── User.js
 ├── controllers/
-│   ├── authController.js
-│   ├── deckController.js
-│   ├── matchController.js
-│   ├── opponentArchetypeController.js
-│   ├── pokemonController.js
-│   ├── statsController.js
-│   └── tournamentController.js
+│ ├── authController.js
+│ ├── deckController.js
+│ ├── matchController.js
+│ ├── opponentArchetypeController.js
+│ ├── pokemonController.js
+│ ├── statsController.js
+│ └── tournamentController.js # tracked + hosted (creacion, jugadores, pairings, standings, export/import)
 ├── routes/
-│   ├── authRoutes.js
-│   ├── deckRoutes.js
-│   ├── matchRoutes.js
-│   ├── opponentArchetypeRoutes.js
-│   ├── pokemonRoutes.js
-│   ├── statsRoutes.js
-│   └── tournamentRoutes.js
+│ ├── authRoutes.js
+│ ├── deckRoutes.js
+│ ├── matchRoutes.js
+│ ├── opponentArchetypeRoutes.js
+│ ├── pokemonRoutes.js
+│ ├── statsRoutes.js
+│ └── tournamentRoutes.js
 ├── services/
-│   └── pokeapiService.js
+│ ├── pokeapiService.js
+│ ├── swissPairingService.js # logica pura de emparejamiento suizo
+│ ├── eliminationPairingService.js # logica pura de bracket (seeding, fases, byes)
+│ ├── groupsEliminationService.js # reparto en grupos + entrada a eliminatoria
+│ ├── roundRobinService.js # calendario todos-contra-todos (grupos y liga)
+│ └── tiebreakerService.js # calculo de OMW%
 └── middleware/
-    ├── authMiddleware.js
-    └── rateLimitMiddleware.js
-scripts/
-└── cleanupOrphanMatches.js   # one-off: limpieza de partidas huérfanas (issue #31)
+├── authMiddleware.js
+└── rateLimitMiddleware.js
+├── scripts/
+│ └── cleanupOrphanMatches.js # one-off: limpieza de partidas huérfanas (issue #31)
+├── tests/
+├── models/
+├── services/
+└── controllers/
 ```
 
 ## Variables de entorno
@@ -65,6 +74,13 @@ JWT_SECRET=una_cadena_larga_y_aleatoria
 npm install
 npm run dev
 ```
+
+## Tests
+
+```bash
+npm test
+```
+86+ tests cubriendo modelos, servicios de pairing (logica pura) y controladores, tanto de `tracked` como de `hosted`.
 
 ## Endpoints
 
@@ -103,10 +119,11 @@ Opcionalmente, una partida puede asociarse a un torneo mediante `tournamentId`, 
 | Método | Ruta | Descripción |
 |---|---|---|
 | GET | `/deck/:deckId/overview` | Resumen del mazo: win-rate, totales y promedios de premios |
-| GET | `/deck/:deckId/matchups` | Win-rate desglosado por mazo rival |
+| GET | `/deck/:deckId/matchups` | Win-rate desglosado por mazo rival, dentro de ese mazo |
 | GET | `/deck/:deckId/streak` | Racha actual (victorias/derrotas seguidas) |
 | GET | `/global/overview` | Resumen combinado de todos los mazos del usuario |
 | GET | `/global/ranking?minMatches=&sortBy=` | Ranking de mazos. `minMatches` (por defecto 3) y `sortBy`: `winRate` (por defecto), `totalMatches` o `deckName` |
+| GET | `/global/opponents` | Win-rate contra cada arquetipo rival, agregado a lo largo de **todos** los mazos propios (a diferencia de `/deck/:deckId/matchups`, que es dentro de un solo mazo) |
 
 ### Pokémon (`/api/pokemon`) — todas requieren auth
 Proxy hacia PokeAPI para no exponer llamadas directas desde el cliente.
@@ -125,21 +142,54 @@ Arquetipos de mazos rivales, con sus sprites asociados.
 
 ### Torneos (`/api/tournaments`) — todas requieren auth
 
-Seguimiento de torneos en modo **tracked** (registro del propio historial dentro de un torneo externo). Soporta 5 estructuras: `swiss`, `swiss_elimination`, `groups_elimination`, `elimination`, `league`.
+Dos modos, distinguidos por el campo `mode`:
 
+- **`tracked`**: registro del propio historial dentro de un torneo externo (no organizado por la app).
+- **`hosted`**: la app aloja el torneo completo, con varios jugadores (sin cuenta propia) y emparejamientos automáticos.
+
+Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_elimination`, `groups_elimination`, `elimination`, `league`.
+
+#### Comunes a ambos modos
 | Método | Ruta | Descripción |
 |---|---|---|
 | GET | `/?page=&limit=` | Lista torneos del usuario (paginado) |
-| GET | `/:id` | Detalle de un torneo, incluye sus `matches` ordenados por fase/ronda |
+| GET | `/:id` | Detalle de un torneo. En `tracked`, incluye sus `matches` ordenados por fase/ronda |
 | POST | `/` | Crea un torneo. `structure` y `deckId` obligatorios si `mode` es `tracked` |
 | PUT | `/:id` | Edita un torneo |
-| DELETE | `/:id` | Elimina un torneo; sus partidas **no** se borran, quedan sueltas (se limpia su `tournamentId`/`phase`/`round`) |
-| POST | `/:id/standing` | Añade un snapshot manual de puntos/posición. Solo válido si `structure` es `league` |
-| GET | `/:id/summary` | Resumen W-L-T global y desglosado por fase |
+| DELETE | `/:id` | Elimina un torneo; sus partidas (modo `tracked`) **no** se borran, quedan sueltas (se limpia su `tournamentId`/`phase`/`round`) |
+| GET | `/:id/summary` | Resumen W-L-T global y desglosado por fase (solo `tracked`) |
+| POST | `/:id/standing` | Añade un snapshot manual de puntos/posición. Solo válido si `structure` es `league` (modo `tracked`) |
 
-Modo **hosted** (la app aloja el torneo completo con jugadores y pairings) queda fuera de alcance por ahora — ver TODO. Los modelos `TournamentPlayer` y `TournamentMatch` ya están creados mas no conectados a ningún endpoint todavía.
+#### Modo `hosted` — jugadores
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/:id/players` | Crea una inscripción (jugador). `isOrganizer: true` requiere `deckId` (tu mazo real, si participas tú) |
+| GET | `/:id/players` | Lista los jugadores del torneo |
+| PUT | `/:id/players/:playerId` | Edita un jugador (nombre, `dropped`, etc.) |
+| DELETE | `/:id/players/:playerId` | Elimina un jugador (sin cascada sobre sus partidas) |
 
-> Diseño completo del modo hosted (pendiente de desarrollo): ver [`TORNEOS_HOSTED_GDD.md`](./TORNEOS_HOSTED_GDD.md)
+#### Modo `hosted` — rondas y emparejamientos
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/:id/swiss-round` | Genera la siguiente ronda suiza (evita repetir rivales, byes automáticos) |
+| POST | `/:id/elimination-bracket` | Genera el bracket inicial de eliminación directa (`seeded` o aleatorio) |
+| POST | `/:id/advance-bracket` | Avanza el bracket a la fase siguiente, emparejando ganadores. Resuelve ida/vuelta (agregado de premios) y muerte súbita |
+| POST | `/:id/assign-groups` | Reparte los jugadores en grupos (`groupSize`) |
+| POST | `/:id/group-stage-rounds` | Genera el calendario todos-contra-todos de cada grupo |
+| POST | `/:id/league-rounds` | Genera el calendario de liga (ida, o ida y vuelta si `leagueDoubleRound`) |
+| POST | `/:id/close-phase` | Cierra la fase suiza (`topCut`) o de grupos (`qualifiersPerGroup`) y calcula la entrada a eliminatoria (byes + ronda previa si el nº de clasificados no es potencia de 2) |
+| POST | `/:id/resolve-preliminary-entry` | Resuelve la entrada a la fase destino tras completar la ronda previa reducida |
+| PUT | `/:id/hosted-matches/:matchId/result` | Registra el resultado de una partida. Si el jugador es `isOrganizer`, genera automáticamente un `Match` normal vinculado a su `deckId`, para que cuente en sus stats |
+| GET | `/:id/hosted-matches` | Lista todas las partidas del torneo |
+| GET | `/:id/hosted-standings` | Clasificación: puntos, W-L-D, y desempates (diferencial de premios, luego OMW%) |
+
+#### Modo `hosted` — exportar / importar
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/:id/export` | Exporta el torneo completo (jugadores + partidas + resultados) a JSON |
+| POST | `/import` | Importa un torneo exportado. `selfPlayerId` + `selfDeckId` opcionales, para vincular una inscripción a tu cuenta |
+
+> Diseño completo del modo hosted: ver [`TORNEOS_HOSTED_GDD.md`](./TORNEOS_HOSTED_GDD.md) — límite actual de 16 jugadores en la primera ronda de eliminatoria (ampliación a 64 en progreso, ver issue #67).
 
 ## Autenticación
 
@@ -160,5 +210,5 @@ Conectado a Render con auto-deploy en cada push a `main`. Variables de entorno c
 
 ## TODO
 
-- [ ] Torneos, modo hosted: gestión de jugadores, pairings automáticos (swiss/eliminatoria/grupos/liga) y cálculo de standings.
-- [ ] Añadir `expiresIn` a los JWT (caducidad de sesión).
+- [ ] Ampliar bracket de eliminatoria hasta 64 jugadores (issue #67)
+- [ ] Añadir `expiresIn` a los JWT (caducidad de sesión)
