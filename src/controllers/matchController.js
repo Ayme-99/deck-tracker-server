@@ -1,9 +1,18 @@
 const Match = require('../models/Match');
+const Deck = require('../models/Deck');
 
 exports.createMatch = async (req, res) => {
   try {
     const match = new Match({ ...req.body, userId: req.userId });
     await match.save();
+
+    // Toca el updatedAt del mazo para que suba a la primera posicion en la
+    // lista de mazos, ordenada por actividad reciente (issue #98)
+    await Deck.findOneAndUpdate(
+      { _id: match.deckId, userId: req.userId },
+      { updatedAt: new Date() }
+    );
+
     res.status(201).json(match);
   } catch (error) {
     res.status(400).json({ error: error.message });
