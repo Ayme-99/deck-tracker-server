@@ -8,5 +8,7 @@ router.use(protect);
 router.get('/', controller.getAll);
 router.get('/by-name', controller.getByName);
 router.post('/', controller.upsert);
+router.patch('/', controller.update);
+router.delete('/', controller.remove);
 
 module.exports = router;
