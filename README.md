@@ -132,6 +132,12 @@ Proxy hacia PokeAPI para no exponer llamadas directas desde el cliente.
 | GET | `/search?q=` | Busca Pokémon por nombre |
 | GET | `/sprite/:name` | Devuelve el sprite de un Pokémon |
 
+### Catálogo de cartas (`/api/cards`) — todas requieren auth
+Proxy hacia [TCGdex](https://tcgdex.dev) (gratuita, sin API key, issue #80) para no exponer llamadas directas desde el cliente. Se usa para validar/sugerir el `cardId` real de una carta al añadirla a un mazo, en vez de un slug generado a mano. (Nota: la idea original era pokemontcg.io, pero esa API se integró en Scrydex, de pago sin plan gratuito.)
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/search?q=` | Busca cartas reales por nombre (hasta 15 resultados: cardId, nombre, set, número, imagen) |
+
 ### Opponent Archetypes (`/api/opponent-archetypes`) — todas requieren auth
 Arquetipos de mazos rivales, con sus sprites asociados.
 | Método | Ruta | Descripción |
