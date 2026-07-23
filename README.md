@@ -213,8 +213,3 @@ Authorization: Bearer <token>
 ## Deploy
 
 Conectado a Render con auto-deploy en cada push a `main`. Variables de entorno configuradas en el dashboard de Render (Environment).
-
-## TODO
-
-- [ ] Ampliar bracket de eliminatoria hasta 64 jugadores (issue #67)
-- [ ] Añadir `expiresIn` a los JWT (caducidad de sesión)
