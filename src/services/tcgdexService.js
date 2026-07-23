@@ -9,7 +9,7 @@
 // publicados, asi que se usa esa en su lugar. Mismo patron que
 // pokeapiService.js (fetch nativo, sin dependencias nuevas).
 
-const TCGDEX_BASE = 'https://api.tcgdex.net/v2/en';
+const TCGDEX_BASE = 'https://api.tcgdex.net/v2/en'; // Base URL de la API de TCGdex. TODO: permitir cambiar el idioma (en, es, ja, etc) en la configuracion del usuario, para que busque cartas en el idioma preferido. Por ahora solo se usa 'en' (ingles).
 
 /**
  * Busca cartas reales por nombre (substring, no solo prefijo). Devuelve

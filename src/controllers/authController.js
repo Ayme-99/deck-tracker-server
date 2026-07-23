@@ -1,8 +1,17 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+// Caducidad de sesion (issue #82): antes los JWT no caducaban nunca.
+// El middleware ya trataba TokenExpiredError como un 401 generico ("Token
+// invalido o expirado"), y el cliente ya reacciona a cualquier 401 cerrando
+// sesion (ver ApiService._handleSessionExpired), asi que anadir expiresIn
+// es un cambio puramente aditivo, sin tocar nada mas.
+//
+// Se lee process.env en cada llamada (no en una constante de modulo) para
+// que sea configurable sin reiniciar el proceso en tests/scripts.
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET);
+  const expiresIn = process.env.JWT_EXPIRES_IN || '30d';
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn });
 };
 
 exports.register = async (req, res) => {

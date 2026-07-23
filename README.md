@@ -67,6 +67,7 @@ Crea un archivo `.env` en la raíz con:
 MONGO_URI=tu_uri_de_mongodb_atlas
 PORT=5000
 JWT_SECRET=una_cadena_larga_y_aleatoria
+JWT_EXPIRES_IN=30d (opcional; caducidad de la sesión, formato de la librería `jsonwebtoken` — por defecto 30d si no se indica)
 
 ## Instalación local
 
