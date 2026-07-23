@@ -5,18 +5,20 @@
 //
 // Ver TORNEOS_HOSTED_GDD.md seccion 4.2.
 
-const PHASE_ORDER = ['round_of_16', 'quarterfinal', 'semifinal', 'final'];
+const PHASE_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final'];
 
 /**
  * Determina la fase inicial del bracket segun el nº de jugadores.
- * Solo soporta potencias de 2 hasta 16 (round_of_16 como maximo en v1).
+ * Soporta potencias de 2 hasta 64 (issue #92).
  */
 function bracketPhaseForSize(numPlayers) {
   if (numPlayers <= 2) return 'final';
   if (numPlayers <= 4) return 'semifinal';
   if (numPlayers <= 8) return 'quarterfinal';
   if (numPlayers <= 16) return 'round_of_16';
-  throw new Error('Bracket de mas de 16 jugadores no soportado en esta version');
+  if (numPlayers <= 32) return 'round_of_32';
+  if (numPlayers <= 64) return 'round_of_64';
+  throw new Error('Bracket de mas de 64 jugadores no soportado en esta version');
 }
 
 /** Fase siguiente en el bracket, o null si 'final' ya es la ultima. */
@@ -71,7 +73,7 @@ function generateBracket(playerIds, { seeded = false } = {}) {
   return { phase, pairings };
 }
 
-/** Fase inmediatamente superior (bracket mas grande), o null si 'round_of_16' ya es la mas grande soportada. */
+/** Fase inmediatamente superior (bracket mas grande), o null si 'round_of_64' ya es la mas grande soportada. */
 function previousPhase(phase) {
   const idx = PHASE_ORDER.indexOf(phase);
   if (idx <= 0) return null;

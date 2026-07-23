@@ -39,8 +39,18 @@ describe('groupsEliminationService', () => {
     });
 
     test('rechaza mas clasificados de los soportados', () => {
-      const classified = Array.from({ length: 40 }, (_, i) => 'x' + i);
+      const classified = Array.from({ length: 200 }, (_, i) => 'x' + i);
       expect(() => calculateEliminationEntry(classified)).toThrow();
+    });
+
+    test('42 clasificados: 22 byes a round_of_32 + 20 en ronda previa (round_of_64, issue #92)', () => {
+      const classified = Array.from({ length: 42 }, (_, i) => 'seed' + (i + 1));
+      const result = calculateEliminationEntry(classified);
+
+      expect(result.targetPhase).toBe('round_of_32');
+      expect(result.byeIds).toHaveLength(22);
+      expect(result.preliminary.phase).toBe('round_of_64');
+      expect(result.preliminary.pairings).toHaveLength(10);
     });
 
     test('rechaza menos de 2 clasificados', () => {

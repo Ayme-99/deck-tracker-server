@@ -43,10 +43,10 @@ function calculateEliminationEntry(classifiedIds) {
   const n = classifiedIds.length;
   if (n < 2) throw new Error('Hacen falta al menos 2 clasificados');
 
-  // Mayor potencia de 2 que no supere n, entre las soportadas (2,4,8,16)
-  const supportedSizes = [16, 8, 4, 2];
+  // Mayor potencia de 2 que no supere n, entre las soportadas (2,4,8,16,32,64)
+  const supportedSizes = [64, 32, 16, 8, 4, 2];
   const targetSize = supportedSizes.find((size) => size <= n);
-  if (!targetSize) throw new Error('Nº de clasificados no soportado en esta version (maximo 16+15=31)');
+  if (!targetSize) throw new Error('Nº de clasificados no soportado en esta version (maximo 64+63=127)');
 
   const targetPhase = bracketPhaseForSize(targetSize);
   const extra = n - targetSize;
@@ -64,7 +64,7 @@ function calculateEliminationEntry(classifiedIds) {
   const prelimIds = classifiedIds.slice(n - prelimCount); // peores seeds, juegan la previa
   const prelimPhase = previousPhase(targetPhase);
   if (!prelimPhase) {
-    throw new Error('No hay fase superior disponible para la ronda previa (maximo soportado: round_of_16)');
+    throw new Error('No hay fase superior disponible para la ronda previa (maximo soportado: round_of_64)');
   }
 
   return {
