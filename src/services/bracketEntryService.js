@@ -73,4 +73,61 @@ async function createEliminationEntryMatches(tournament, classifiedIds) {
   return { targetPhase, preliminaryPhase: preliminary.phase, byeIds, matches: createdMatches };
 }
 
-module.exports = { createRealMatch, createEliminationEntryMatches };
+// Agrupa las partidas de una fase por enfrentamiento real (single = 1 sola;
+// two_legs = first_leg+second_leg[+sudden_death] enlazadas por tiedMatchId).
+// Compartida entre advanceBracketRound y resolvePreliminaryEntry
+// (issue #78: movida aqui desde tournamentRoundsController junto con
+// resolveBracketWinner, con las que forma una unidad logica).
+function groupMatchesByTiedPair(phaseMatches) {
+  const grouped = [];
+  const seen = new Set();
+  for (const m of phaseMatches) {
+    if (seen.has(m._id.toString())) continue;
+    const group = [m];
+    seen.add(m._id.toString());
+    if (m.tiedMatchId) {
+      const linked = phaseMatches.filter(
+        (other) => !seen.has(other._id.toString()) &&
+          (other._id.toString() === m.tiedMatchId.toString() || (other.tiedMatchId && other.tiedMatchId.toString() === m._id.toString()))
+      );
+      for (const l of linked) {
+        group.push(l);
+        seen.add(l._id.toString());
+      }
+    }
+    grouped.push(group);
+  }
+  return grouped;
+}
+
+// Determina el ganador de un enfrentamiento del bracket a partir de sus
+// partidas: single_match tiene 1 sola TournamentMatch con winnerId directo.
+// two_legs puede tener first_leg+second_leg (agregado de premios, ya que
+// second_leg invierte player1Id/player2Id respecto a first_leg) y, si el
+// agregado empata, una sudden_death que decide de forma definitiva.
+// Devuelve null si el enfrentamiento aun no tiene ganador determinable.
+function resolveBracketWinner(matchesForThisPair) {
+  const single = matchesForThisPair.find((m) => m.leg === 'single');
+  if (single) return single.winnerId ? single.winnerId.toString() : null;
+
+  const suddenDeath = matchesForThisPair.find((m) => m.leg === 'sudden_death');
+  if (suddenDeath && suddenDeath.winnerId) return suddenDeath.winnerId.toString();
+
+  const firstLeg = matchesForThisPair.find((m) => m.leg === 'first_leg');
+  const secondLeg = matchesForThisPair.find((m) => m.leg === 'second_leg');
+  if (!firstLeg || !secondLeg || firstLeg.status !== 'completed' || secondLeg.status !== 'completed') {
+    return null; // ida/vuelta aun no completas
+  }
+
+  const p1 = firstLeg.player1Id.toString();
+  const p2 = firstLeg.player2Id.toString();
+  // second_leg invierte player1Id/player2Id respecto a first_leg
+  const p1Total = (firstLeg.player1Prizes || 0) + (secondLeg.player2Id.toString() === p1 ? (secondLeg.player2Prizes || 0) : (secondLeg.player1Prizes || 0));
+  const p2Total = (firstLeg.player2Prizes || 0) + (secondLeg.player1Id.toString() === p2 ? (secondLeg.player1Prizes || 0) : (secondLeg.player2Prizes || 0));
+
+  if (p1Total > p2Total) return p1;
+  if (p2Total > p1Total) return p2;
+  return null; // agregado empatado y sin muerte subita todavia -- hace falta crearla manualmente
+}
+
+module.exports = { createRealMatch, createEliminationEntryMatches, groupMatchesByTiedPair, resolveBracketWinner };
