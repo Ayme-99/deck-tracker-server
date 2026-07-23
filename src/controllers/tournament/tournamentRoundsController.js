@@ -1,180 +1,16 @@
-const Tournament = require('../models/Tournament');
-const Match = require('../models/Match');
-const mongoose = require('mongoose');
-const TournamentPlayer = require('../models/TournamentPlayer');
-const TournamentMatch = require('../models/TournamentMatch');
-const { generateSwissPairings } = require('../services/swissPairingService');
-const { generateBracket, nextPhase, seededPairings } = require('../services/eliminationPairingService');
-const { assignGroups, calculateEliminationEntry } = require('../services/groupsEliminationService');
-const { calculateOMW } = require('../services/tiebreakerService');
-const { generateRoundRobinSchedule } = require('../services/roundRobinService');
+// Generacion de rondas/bracket y registro de resultados de un torneo hosted
+// (issue #115: extraido de tournamentController.js).
 
-exports.getTournaments = async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const [tournaments, total] = await Promise.all([
-      Tournament.find({ userId: req.userId })
-        .sort({ date: -1 })
-        .skip(skip)
-        .limit(limit),
-      Tournament.countDocuments({ userId: req.userId })
-    ]);
-
-    res.json({
-      data: tournaments,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-exports.getTournamentById = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    // Partidas del torneo, agrupadas visualmente por fase/ronda en el propio
-    // orden de llegada (el front se encarga de agruparlas si lo necesita)
-    const matches = await Match.find({ tournamentId: tournament._id, userId: req.userId })
-      .sort({ phase: 1, round: 1, playedAt: 1 });
-
-    res.json({ ...tournament.toObject(), matches });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-exports.createTournament = async (req, res) => {
-  try {
-    const tournament = new Tournament({ ...req.body, userId: req.userId });
-    await tournament.save();
-    res.status(201).json(tournament);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
-exports.updateTournament = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOneAndUpdate(
-      { _id: req.params.id, userId: req.userId },
-      req.body,
-      { new: true, runValidators: true }
-    );
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-    res.json(tournament);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
-exports.deleteTournament = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOneAndDelete({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    // A diferencia del borrado de mazos, aqui NO se borran las partidas en
-    // cascada: quedan como partidas sueltas (se limpia su referencia al
-    // torneo) para no perder historial ni stats del mazo.
-    const { modifiedCount } = await Match.updateMany(
-      { tournamentId: tournament._id, userId: req.userId },
-      { $set: { tournamentId: null, phase: null, round: null } }
-    );
-
-    res.json({
-      message: 'Torneo eliminado correctamente',
-      unlinkedMatches: modifiedCount
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// Añade un snapshot manual de puntos/posición (solo tiene sentido cuando
-// structure es 'league', ya que ahi no hay forma de calcular la clasificacion
-// a partir de los matches propios: hace falta que el usuario la introduzca
-// a mano cuando quiera)
-exports.addStandingSnapshot = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    if (tournament.structure !== 'league') {
-      return res.status(400).json({ error: 'Los snapshots de standing solo aplican a torneos de tipo "league"' });
-    }
-
-    const { points, position, notes } = req.body;
-    tournament.standingSnapshots.push({ points, position, notes });
-    await tournament.save();
-
-    res.status(201).json(tournament);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
-// Resumen W-L-T del torneo, global y desglosado por fase
-exports.getTournamentSummary = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const tournament = await Tournament.findOne({ _id: id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    const byPhase = await Match.aggregate([
-      { $match: { tournamentId: new mongoose.Types.ObjectId(id), userId: req.userId } },
-      {
-        $group: {
-          _id: '$phase',
-          totalMatches: { $sum: 1 },
-          wins: { $sum: { $cond: [{ $eq: ['$result', 'win'] }, 1, 0] } },
-          losses: { $sum: { $cond: [{ $eq: ['$result', 'loss'] }, 1, 0] } },
-          ties: { $sum: { $cond: [{ $eq: ['$result', 'tie'] }, 1, 0] } }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          phase: '$_id',
-          totalMatches: 1,
-          wins: 1,
-          losses: 1,
-          ties: 1,
-          winRate: {
-            $round: [{ $multiply: [{ $divide: ['$wins', '$totalMatches'] }, 100] }, 1]
-          }
-        }
-      },
-      { $sort: { phase: 1 } }
-    ]);
-
-    // El global se calcula sumando el desglose por fase, en vez de lanzar
-    // una segunda query, ya que byPhase ya cubre todas las partidas del torneo
-    const overall = byPhase.reduce((acc, phase) => ({
-      totalMatches: acc.totalMatches + phase.totalMatches,
-      wins: acc.wins + phase.wins,
-      losses: acc.losses + phase.losses,
-      ties: acc.ties + phase.ties
-    }), { totalMatches: 0, wins: 0, losses: 0, ties: 0 });
-
-    overall.winRate = overall.totalMatches > 0
-      ? Math.round((overall.wins / overall.totalMatches) * 1000) / 10
-      : 0;
-
-    res.json({ overall, byPhase });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+const Tournament = require('../../models/Tournament');
+const Match = require('../../models/Match');
+const TournamentPlayer = require('../../models/TournamentPlayer');
+const TournamentMatch = require('../../models/TournamentMatch');
+const { generateSwissPairings } = require('../../services/swissPairingService');
+const { generateBracket, nextPhase, seededPairings } = require('../../services/eliminationPairingService');
+const { assignGroups, calculateEliminationEntry } = require('../../services/groupsEliminationService');
+const { calculateOMW } = require('../../services/tiebreakerService');
+const { generateRoundRobinSchedule } = require('../../services/roundRobinService');
+const { createEliminationEntryMatches, createRealMatch } = require('../../services/bracketEntryService');
 
 // --- Modo hosted (issue #21) ---
 
@@ -298,69 +134,6 @@ exports.getHostedStandings = async (req, res) => {
     });
 
     res.json({ standings });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// --- Jugadores (hosted) ---
-
-exports.createPlayer = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    const player = new TournamentPlayer({ ...req.body, tournamentId: tournament._id });
-    await player.save();
-    res.status(201).json(player);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
-exports.getPlayers = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    const players = await TournamentPlayer.find({ tournamentId: tournament._id }).sort({ name: 1 });
-    res.json(players);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-exports.updatePlayer = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    const player = await TournamentPlayer.findOneAndUpdate(
-      { _id: req.params.playerId, tournamentId: tournament._id },
-      req.body,
-      { new: true, runValidators: true }
-    );
-    if (!player) return res.status(404).json({ error: 'Jugador no encontrado' });
-    res.json(player);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
-exports.deletePlayer = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    // No se borran en cascada los TournamentMatch ya jugados por este
-    // jugador -- quedan como historial, igual que al borrar un torneo
-    // tracked no se borran sus Match.
-    const player = await TournamentPlayer.findOneAndDelete({
-      _id: req.params.playerId,
-      tournamentId: tournament._id
-    });
-    if (!player) return res.status(404).json({ error: 'Jugador no encontrado' });
-    res.json({ message: 'Jugador eliminado correctamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -642,43 +415,59 @@ exports.generateLeagueRounds = async (req, res) => {
 
 // --- Transicion de fase (issue #24) ---
 
-// Crea las partidas para la entrada a la fase eliminatoria, respetando
-// tournament.eliminationFormat (single_match / two_legs). Reutilizada por
-// swiss_elimination y groups_elimination -- ambas comparten la misma logica.
-//
-// FIX (bug detectado tras #80/#83): antes, TODOS los byeIds se declaraban
-// "ganadores sin rival" (player2Id: null, status: completed) sin jugar
-// nada. Eso era conceptualmente incorrecto en el caso extra===0 (nº de
-// clasificados ya potencia de 2): ahi no hace falta ninguna ronda previa,
-// asi que los clasificados deben EMPAREJARSE DE VERDAD entre si en la
-// fase destino, no "ganar gratis". El bye solo tiene sentido cuando de
-// verdad se salta una ronda previa REAL (extra>0) -- y en ese caso, el
-// rival de cada bye (el ganador de la previa) todavia no se conoce, asi
-// que tampoco se puede crear su partida aqui: hay que esperar a que la
-// ronda previa termine y resolverlo con resolvePreliminaryEntry.
-async function createEliminationEntryMatches(tournament, classifiedIds) {
-  const { targetPhase, byeIds, preliminary } = calculateEliminationEntry(classifiedIds);
-  const createdMatches = [];
-
-  if (!preliminary) {
-    // Sin ronda previa: los clasificados se emparejan de verdad en la
-    // fase destino, con el mismo seeding (mejor vs peor).
-    const pairings = seededPairings(byeIds);
-    for (const pairing of pairings) {
-      const created = await createRealMatch(tournament, targetPhase, pairing);
-      createdMatches.push(...created);
+// Determina el ganador de un enfrentamiento del bracket a partir de sus
+// partidas: single_match tiene 1 sola TournamentMatch con winnerId directo.
+// two_legs puede tener first_leg+second_leg (agregado de premios, ya que
+// second_leg invierte player1/player2 respecto a first_leg) y, si el
+// agregado empata, una sudden_death que decide de forma definitiva.
+// Devuelve null si el enfrentamiento aun no tiene ganador determinable.
+// Agrupa las partidas de una fase por enfrentamiento real (single = 1 sola;
+// two_legs = first_leg+second_leg[+sudden_death] enlazadas por tiedMatchId).
+// Compartida entre advanceBracketRound y resolvePreliminaryEntry.
+function groupMatchesByTiedPair(phaseMatches) {
+  const grouped = [];
+  const seen = new Set();
+  for (const m of phaseMatches) {
+    if (seen.has(m._id.toString())) continue;
+    const group = [m];
+    seen.add(m._id.toString());
+    if (m.tiedMatchId) {
+      const linked = phaseMatches.filter(
+        (other) => !seen.has(other._id.toString()) &&
+          (other._id.toString() === m.tiedMatchId.toString() || (other.tiedMatchId && other.tiedMatchId.toString() === m._id.toString()))
+      );
+      for (const l of linked) {
+        group.push(l);
+        seen.add(l._id.toString());
+      }
     }
-    return { targetPhase, preliminaryPhase: null, byeIds: [], matches: createdMatches };
+    grouped.push(group);
+  }
+  return grouped;
+}
+
+function resolveBracketWinner(matchesForThisPair) {
+  const single = matchesForThisPair.find((m) => m.leg === 'single');
+  if (single) return single.winnerId ? single.winnerId.toString() : null;
+
+  const suddenDeath = matchesForThisPair.find((m) => m.leg === 'sudden_death');
+  if (suddenDeath && suddenDeath.winnerId) return suddenDeath.winnerId.toString();
+
+  const firstLeg = matchesForThisPair.find((m) => m.leg === 'first_leg');
+  const secondLeg = matchesForThisPair.find((m) => m.leg === 'second_leg');
+  if (!firstLeg || !secondLeg || firstLeg.status !== 'completed' || secondLeg.status !== 'completed') {
+    return null; // ida/vuelta aun no completas
   }
 
-  // Con ronda previa: solo se crean sus partidas. Los byeIds quedan en
-  // espera (no se crea nada para ellos todavia) hasta que se llame a
-  // resolvePreliminaryEntry una vez la previa este resuelta.
-  for (const pairing of preliminary.pairings) {
-    const created = await createRealMatch(tournament, preliminary.phase, pairing);
-    createdMatches.push(...created);
-  }
-  return { targetPhase, preliminaryPhase: preliminary.phase, byeIds, matches: createdMatches };
+  const p1 = firstLeg.player1Id.toString();
+  const p2 = firstLeg.player2Id.toString();
+  // second_leg invierte player1Id/player2Id respecto a first_leg
+  const p1Total = (firstLeg.player1Prizes || 0) + (secondLeg.player2Id.toString() === p1 ? (secondLeg.player2Prizes || 0) : (secondLeg.player1Prizes || 0));
+  const p2Total = (firstLeg.player2Prizes || 0) + (secondLeg.player1Id.toString() === p2 ? (secondLeg.player1Prizes || 0) : (secondLeg.player2Prizes || 0));
+
+  if (p1Total > p2Total) return p1;
+  if (p2Total > p1Total) return p2;
+  return null; // agregado empatado y sin muerte subita todavia -- hace falta crearla manualmente
 }
 
 // Cierra la fase de swiss o grupos y genera la entrada a la fase eliminatoria.
@@ -733,237 +522,6 @@ exports.closePhaseToElimination = async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 };
-
-// --- Exportar / Importar (issue #46) ---
-
-// Exporta el torneo completo (Tournament + todos los TournamentPlayer +
-// todos los TournamentMatch) a un JSON que otro usuario pueda importar.
-// Se incluyen los _id originales solo para poder remapear las relaciones
-// (opponentIds, player1Id/2Id, winnerId, tiedMatchId) durante la importacion;
-// no tienen validez fuera de este documento exportado.
-exports.exportTournament = async (req, res) => {
-  try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
-
-    const players = await TournamentPlayer.find({ tournamentId: tournament._id });
-    const matches = await TournamentMatch.find({ tournamentId: tournament._id });
-
-    res.json({
-      tournament: {
-        name: tournament.name,
-        format: tournament.format,
-        date: tournament.date,
-        location: tournament.location,
-        structure: tournament.structure,
-        status: tournament.status,
-        eliminationFormat: tournament.eliminationFormat,
-        thirdPlacePlayoff: tournament.thirdPlacePlayoff,
-        leagueDoubleRound: tournament.leagueDoubleRound,
-        notes: tournament.notes
-      },
-      players: players.map((p) => ({
-        _id: p._id,
-        name: p.name,
-        deckArchetype: p.deckArchetype,
-        dropped: p.dropped,
-        points: p.points,
-        wins: p.wins,
-        losses: p.losses,
-        draws: p.draws,
-        prizeDifferential: p.prizeDifferential,
-        opponentIds: p.opponentIds,
-        byeReceived: p.byeReceived,
-        groupName: p.groupName
-        // isOrganizer/deckId NO se exportan: son propios de quien exporta,
-        // sin sentido para quien importa (vera esa inscripcion como un
-        // jugador normal, salvo que la marque como "yo" al importar)
-      })),
-      matches: matches.map((m) => ({
-        _id: m._id,
-        phase: m.phase,
-        round: m.round,
-        player1Id: m.player1Id,
-        player2Id: m.player2Id,
-        winnerId: m.winnerId,
-        status: m.status,
-        notes: m.notes,
-        player1Prizes: m.player1Prizes,
-        player2Prizes: m.player2Prizes,
-        isDraw: m.isDraw,
-        leg: m.leg,
-        tiedMatchId: m.tiedMatchId
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// Importa un torneo exportado por otro usuario. body: { data, selfPlayerId?,
-// selfDeckId? }. Si se indica selfPlayerId (el _id ORIGINAL del jugador que
-// eres tu dentro del JSON exportado), esa inscripcion se marca isOrganizer y
-// requiere selfDeckId (tu mazo real) -- el modelo exige deckId cuando
-// isOrganizer es true.
-exports.importTournament = async (req, res) => {
-  try {
-    const { data, selfPlayerId, selfDeckId } = req.body;
-    if (selfPlayerId && !selfDeckId) {
-      return res.status(400).json({ error: 'selfDeckId es obligatorio si se indica selfPlayerId' });
-    }
-
-    const newTournament = await Tournament.create({
-      ...data.tournament,
-      mode: 'hosted',
-      userId: req.userId
-    });
-
-    // 1ª pasada: crear jugadores, guardando el mapeo id-original -> id-nuevo
-    const playerIdMap = new Map();
-    for (const p of data.players) {
-      const isSelf = selfPlayerId && String(p._id) === String(selfPlayerId);
-      const newPlayer = await TournamentPlayer.create({
-        tournamentId: newTournament._id,
-        name: p.name,
-        deckArchetype: p.deckArchetype,
-        dropped: p.dropped,
-        points: p.points,
-        wins: p.wins,
-        losses: p.losses,
-        draws: p.draws,
-        prizeDifferential: p.prizeDifferential,
-        byeReceived: p.byeReceived,
-        groupName: p.groupName,
-        isOrganizer: !!isSelf,
-        deckId: isSelf ? selfDeckId : null
-      });
-      playerIdMap.set(String(p._id), newPlayer._id);
-    }
-
-    // 2ª pasada: remapear opponentIds (dependen de que todos los jugadores ya existan)
-    for (const p of data.players) {
-      const remapped = p.opponentIds.map((oid) => playerIdMap.get(String(oid))).filter(Boolean);
-      await TournamentPlayer.findByIdAndUpdate(playerIdMap.get(String(p._id)), { opponentIds: remapped });
-    }
-
-    // 1ª pasada: crear partidas remapeando player1Id/player2Id/winnerId
-    const matchIdMap = new Map();
-    for (const m of data.matches) {
-      const newMatch = await TournamentMatch.create({
-        tournamentId: newTournament._id,
-        phase: m.phase,
-        round: m.round,
-        player1Id: playerIdMap.get(String(m.player1Id)),
-        player2Id: m.player2Id ? playerIdMap.get(String(m.player2Id)) : null,
-        winnerId: m.winnerId ? playerIdMap.get(String(m.winnerId)) : null,
-        status: m.status,
-        notes: m.notes,
-        player1Prizes: m.player1Prizes,
-        player2Prizes: m.player2Prizes,
-        isDraw: m.isDraw,
-        leg: m.leg
-      });
-      matchIdMap.set(String(m._id), newMatch._id);
-    }
-
-    // 2ª pasada: remapear tiedMatchId (depende de que todas las partidas ya existan)
-    for (const m of data.matches) {
-      if (m.tiedMatchId) {
-        const newTied = matchIdMap.get(String(m.tiedMatchId));
-        if (newTied) {
-          await TournamentMatch.findByIdAndUpdate(matchIdMap.get(String(m._id)), { tiedMatchId: newTied });
-        }
-      }
-    }
-
-    res.status(201).json({
-      tournament: newTournament,
-      playersCreated: playerIdMap.size,
-      matchesCreated: matchIdMap.size
-    });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-// Determina el ganador de un enfrentamiento del bracket a partir de sus
-// partidas: single_match tiene 1 sola TournamentMatch con winnerId directo.
-// two_legs puede tener first_leg+second_leg (agregado de premios, ya que
-// second_leg invierte player1/player2 respecto a first_leg) y, si el
-// agregado empata, una sudden_death que decide de forma definitiva.
-// Devuelve null si el enfrentamiento aun no tiene ganador determinable.
-// Agrupa las partidas de una fase por enfrentamiento real (single = 1 sola;
-// two_legs = first_leg+second_leg[+sudden_death] enlazadas por tiedMatchId).
-// Compartida entre advanceBracketRound y resolvePreliminaryEntry.
-function groupMatchesByTiedPair(phaseMatches) {
-  const grouped = [];
-  const seen = new Set();
-  for (const m of phaseMatches) {
-    if (seen.has(m._id.toString())) continue;
-    const group = [m];
-    seen.add(m._id.toString());
-    if (m.tiedMatchId) {
-      const linked = phaseMatches.filter(
-        (other) => !seen.has(other._id.toString()) &&
-          (other._id.toString() === m.tiedMatchId.toString() || (other.tiedMatchId && other.tiedMatchId.toString() === m._id.toString()))
-      );
-      for (const l of linked) {
-        group.push(l);
-        seen.add(l._id.toString());
-      }
-    }
-    grouped.push(group);
-  }
-  return grouped;
-}
-
-// Crea en BD un enfrentamiento real (una partida single, o first_leg+
-// second_leg enlazadas si el torneo es a ida y vuelta). Compartida entre
-// createEliminationEntryMatches, resolvePreliminaryEntry y (potencialmente)
-// otros puntos que generen partidos de eliminatoria.
-async function createRealMatch(tournament, phase, pairing) {
-  if (tournament.eliminationFormat === 'two_legs') {
-    const firstLeg = await TournamentMatch.create({
-      tournamentId: tournament._id, phase,
-      player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'first_leg'
-    });
-    const secondLeg = await TournamentMatch.create({
-      tournamentId: tournament._id, phase,
-      player1Id: pairing.player2Id, player2Id: pairing.player1Id,
-      leg: 'second_leg', tiedMatchId: firstLeg._id
-    });
-    firstLeg.tiedMatchId = secondLeg._id;
-    await firstLeg.save();
-    return [firstLeg, secondLeg];
-  }
-  const match = await TournamentMatch.create({
-    tournamentId: tournament._id, phase, player1Id: pairing.player1Id, player2Id: pairing.player2Id, leg: 'single'
-  });
-  return [match];
-}
-
-function resolveBracketWinner(matchesForThisPair) {
-  const single = matchesForThisPair.find((m) => m.leg === 'single');
-  if (single) return single.winnerId ? single.winnerId.toString() : null;
-
-  const suddenDeath = matchesForThisPair.find((m) => m.leg === 'sudden_death');
-  if (suddenDeath && suddenDeath.winnerId) return suddenDeath.winnerId.toString();
-
-  const firstLeg = matchesForThisPair.find((m) => m.leg === 'first_leg');
-  const secondLeg = matchesForThisPair.find((m) => m.leg === 'second_leg');
-  if (!firstLeg || !secondLeg || firstLeg.status !== 'completed' || secondLeg.status !== 'completed') {
-    return null; // ida/vuelta aun no completas
-  }
-
-  const p1 = firstLeg.player1Id.toString();
-  const p2 = firstLeg.player2Id.toString();
-  // second_leg invierte player1Id/player2Id respecto a first_leg
-  const p1Total = (firstLeg.player1Prizes || 0) + (secondLeg.player2Id.toString() === p1 ? (secondLeg.player2Prizes || 0) : (secondLeg.player1Prizes || 0));
-  const p2Total = (firstLeg.player2Prizes || 0) + (secondLeg.player1Id.toString() === p2 ? (secondLeg.player1Prizes || 0) : (secondLeg.player2Prizes || 0));
-
-  if (p1Total > p2Total) return p1;
-  if (p2Total > p1Total) return p2;
-  return null; // agregado empatado y sin muerte subita todavia -- hace falta crearla manualmente
-}
 
 // Avanza el bracket a la siguiente fase, emparejando los ganadores de la
 // fase indicada en el mismo orden en que se jugaron (match 0 vs match 1,
@@ -1048,6 +606,7 @@ exports.getHostedMatches = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 // Resuelve la entrada de los "byeIds" (jugadores que se saltaron la ronda
 // previa) a la fase destino, una vez la ronda previa este completada.
 // Combina byeIds + ganadores de la previa, reordenados por seed, y los

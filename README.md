@@ -113,7 +113,7 @@ npm test
 
 Cada partida guarda `userPrizes` / `opponentPrizes` (cartas premio cogidas por cada lado, 0-6). El campo `result` (`win`/`loss`/`tie`) se calcula automáticamente al guardar. `endReason` admite: `normal`, `concession`, `no_pokemon`, `time`, `deck_out`.
 
-Opcionalmente, una partida puede asociarse a un torneo mediante `tournamentId`, `phase` (`group_stage`, `swiss`, `round_of_16`, `quarterfinal`, `semifinal`, `final`, `league_round`) y `round`. Si se informa `phase` o `round`, `tournamentId` es obligatorio.
+Opcionalmente, una partida puede asociarse a un torneo mediante `tournamentId`, `phase` (`group_stage`, `swiss`, `round_of_64`, `round_of_32`, `round_of_16`, `quarterfinal`, `semifinal`, `final`, `league_round`) y `round`. Si se informa `phase` o `round`, `tournamentId` es obligatorio.
 
 ### Stats (`/api/stats`) — todas requieren auth
 | Método | Ruta | Descripción |
@@ -189,7 +189,7 @@ Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_eliminatio
 | GET | `/:id/export` | Exporta el torneo completo (jugadores + partidas + resultados) a JSON |
 | POST | `/import` | Importa un torneo exportado. `selfPlayerId` + `selfDeckId` opcionales, para vincular una inscripción a tu cuenta |
 
-> Diseño completo del modo hosted: ver [`TORNEOS_HOSTED_GDD.md`](./TORNEOS_HOSTED_GDD.md) — límite actual de 16 jugadores en la primera ronda de eliminatoria (ampliación a 64 en progreso, ver issue #67).
+> Diseño completo del modo hosted: ver [`TORNEOS_HOSTED_GDD.md`](./TORNEOS_HOSTED_GDD.md) — bracket de eliminatoria soportado hasta 64 jugadores en la primera ronda (issue #67).
 
 ## Autenticación
 
