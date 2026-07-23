@@ -7,13 +7,23 @@ const Tournament = require('../../src/models/Tournament');
 const TournamentPlayer = require('../../src/models/TournamentPlayer');
 const TournamentMatch = require('../../src/models/TournamentMatch');
 const Match = require('../../src/models/Match');
-// Este archivo cubre handlers de dos controllers distintos tras la Fase 3
-// del refactor (issue #115): rounds (swiss/resultados/eliminatoria) y
-// transfer (exportar/importar). Se fusionan en un unico objeto `controller`
-// para no tener que renombrar cada `controller.xxx` de los tests.
-const roundsController = require('../../src/controllers/tournament/tournamentRoundsController');
+// Este archivo cubre handlers de varios controllers distintos tras la
+// division del monolito "rounds" (issue #78, continuacion de la Fase 3
+// del refactor #115/#76): swiss, eliminacion, grupos/liga, resultados y
+// transfer. Se fusionan en un unico objeto `controller` para no tener que
+// renombrar cada `controller.xxx` de los tests.
+const swissController = require('../../src/controllers/tournament/tournamentSwissController');
+const eliminationController = require('../../src/controllers/tournament/tournamentEliminationController');
+const groupsLeagueController = require('../../src/controllers/tournament/tournamentGroupsLeagueController');
+const resultsController = require('../../src/controllers/tournament/tournamentResultsController');
 const transferController = require('../../src/controllers/tournament/tournamentTransferController');
-const controller = { ...roundsController, ...transferController };
+const controller = {
+  ...swissController,
+  ...eliminationController,
+  ...groupsLeagueController,
+  ...resultsController,
+  ...transferController
+};
 
 function mockRes() {
   const res = {};
