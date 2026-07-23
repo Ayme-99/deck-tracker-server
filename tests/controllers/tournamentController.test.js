@@ -3,7 +3,7 @@ jest.mock('../../src/models/Match');
 
 const Tournament = require('../../src/models/Tournament');
 const Match = require('../../src/models/Match');
-const tournamentController = require('../../src/controllers/tournamentController');
+const tournamentController = require('../../src/controllers/tournament/tournamentCrudController');
 
 // Helper para simular req/res de Express sin levantar un servidor real
 function mockRes() {
