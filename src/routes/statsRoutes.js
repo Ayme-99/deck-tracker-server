@@ -11,5 +11,6 @@ router.get('/global/opponents', statsController.getOpponentMatchups);
 router.get('/deck/:deckId/overview', statsController.getDeckOverview);
 router.get('/deck/:deckId/matchups', statsController.getDeckMatchups);
 router.get('/deck/:deckId/streak', statsController.getDeckStreak);
+router.get('/deck/:deckId/timeline', statsController.getDeckTimeline);
 
 module.exports = router;
