@@ -12,10 +12,21 @@
 const TCGDEX_BASE = 'https://api.tcgdex.net/v2/en'; // Base URL de la API de TCGdex. TODO: permitir cambiar el idioma (en, es, ja, etc) en la configuracion del usuario, para que busque cartas en el idioma preferido. Por ahora solo se usa 'en' (ingles).
 
 /**
+ * El id de TCGdex sigue el patron "{setId}-{localId}" (ej. "swsh4-25"). Se
+ * usa el prefijo como codigo de set para desambiguar reimpresiones del
+ * mismo nombre (issue #135) sin pedir el set completo de cada carta -- eso
+ * dispararia una peticion extra por resultado.
+ */
+function setCodeFromCardId(cardId) {
+  const idx = cardId.lastIndexOf('-');
+  return idx === -1 ? null : cardId.slice(0, idx);
+}
+
+/**
  * Busca cartas reales por nombre (substring, no solo prefijo). Devuelve
  * como mucho 15 resultados, con los datos minimos para elegir la carta
- * correcta en un autocompletado (nombre, numero, imagen) y el cardId real
- * a guardar en el mazo.
+ * correcta en un autocompletado (nombre, set, numero, imagen) y el cardId
+ * real a guardar en el mazo.
  */
 async function searchCards(query) {
   const url = `${TCGDEX_BASE}/cards?name=${encodeURIComponent(query)}`;
@@ -26,7 +37,7 @@ async function searchCards(query) {
   return (Array.isArray(data) ? data : []).slice(0, 15).map((c) => ({
     cardId: c.id,
     name: c.name,
-    set: null,
+    set: setCodeFromCardId(c.id),
     number: c.localId || null,
     // La imagen de TCGdex es una URL base sin extension: hay que
     // añadirle calidad + formato (ver https://tcgdex.dev/assets)

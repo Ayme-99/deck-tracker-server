@@ -21,11 +21,36 @@ describe('tcgdexService.searchCards', () => {
       {
         cardId: 'basep-1',
         name: 'Pikachu',
-        set: null,
+        set: 'basep',
         number: '1',
         image: 'https://assets.tcgdex.net/en/base/basep/1/low.webp'
       }
     ]);
+  });
+
+  test('desambigua reimpresiones del mismo nombre usando el codigo de set del cardId (issue #135)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        { id: 'swsh4-25', localId: '25', name: 'Gardevoir' },
+        { id: 'swsh9-86', localId: '86', name: 'Gardevoir' }
+      ])
+    });
+
+    const results = await searchCards('Gardevoir');
+
+    expect(results.map((r) => r.set)).toEqual(['swsh4', 'swsh9']);
+  });
+
+  test('cardId sin guion no rompe el mapeo (set queda null)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ([{ id: 'idraro', localId: '1', name: 'Pikachu' }])
+    });
+
+    const results = await searchCards('Pikachu');
+
+    expect(results[0].set).toBeNull();
   });
 
   test('devuelve array vacio si la API no tiene datos', async () => {
