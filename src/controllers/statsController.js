@@ -51,6 +51,45 @@ exports.getDeckOverview = async (req, res) => {
   }
 };
 
+// Evolución del win-rate de un mazo a lo largo del tiempo (issue #134): un
+// punto por partida jugada, con el win-rate acumulado hasta ese momento y
+// las medias móviles de las últimas 5 y 10 partidas, para poder graficar
+// la tendencia reciente además del agregado histórico.
+exports.getDeckTimeline = async (req, res) => {
+  try {
+    const { deckId } = req.params;
+
+    const matches = await Match.find({ deckId, userId: req.userId })
+      .sort({ playedAt: 1 })
+      .select('result playedAt');
+
+    const winRateOf = (results) => results.length > 0
+      ? Math.round((results.filter((result) => result === 'win').length / results.length) * 1000) / 10
+      : 0;
+
+    const results = [];
+    let wins = 0;
+
+    const timeline = matches.map((match, index) => {
+      wins += match.result === 'win' ? 1 : 0;
+      results.push(match.result);
+
+      return {
+        matchNumber: index + 1,
+        date: match.playedAt,
+        result: match.result,
+        cumulativeWinRate: Math.round((wins / (index + 1)) * 1000) / 10,
+        last5WinRate: winRateOf(results.slice(-5)),
+        last10WinRate: winRateOf(results.slice(-10))
+      };
+    });
+
+    res.json(timeline);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Win-rate por matchup (contra cada tipo de mazo rival)
 exports.getDeckMatchups = async (req, res) => {
   try {
