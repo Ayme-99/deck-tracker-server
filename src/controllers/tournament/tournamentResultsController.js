@@ -57,7 +57,8 @@ exports.getHostedStandings = async (req, res) => {
         draws: p.draws,
         prizeDifferential: p.prizeDifferential,
         omwPercentage: Math.round(omwPercentage * 1000) / 10, // 0-100, 1 decimal
-        dropped: p.dropped
+        dropped: p.dropped,
+        groupName: p.groupName
       };
     });
 
