@@ -247,7 +247,10 @@ exports.getDeckRanking = async (req, res) => {
     const sortStages = {
       winRate: { winRate: -1, totalMatches: -1 },
       totalMatches: { totalMatches: -1, winRate: -1 },
-      deckName: { deckName: 1, winRate: -1 }
+      deckName: { deckName: 1, winRate: -1 },
+      // Issue #196: DeckListScreen ya ordenaba por "Mas victorias" pero
+      // el ranking de Stats no ofrecia ese mismo criterio.
+      wins: { wins: -1, winRate: -1 }
     };
     const sortStage = sortStages[sortBy] || sortStages.winRate;
 
