@@ -7,7 +7,7 @@
 
 const TournamentMatch = require('../models/TournamentMatch');
 const { calculateEliminationEntry } = require('./groupsEliminationService');
-const { seededPairings } = require('./eliminationPairingService');
+const { seededPairings, nextPhase } = require('./eliminationPairingService');
 
 // Crea en BD un enfrentamiento real (una partida single, o first_leg+
 // second_leg enlazadas si el torneo es a ida y vuelta). Compartida entre
@@ -130,4 +130,93 @@ function resolveBracketWinner(matchesForThisPair) {
   return null; // agregado empatado y sin muerte subita todavia -- hace falta crearla manualmente
 }
 
-module.exports = { createRealMatch, createEliminationEntryMatches, groupMatchesByTiedPair, resolveBracketWinner };
+// Issue #206: antes, para saber contra quien se jugaba la siguiente fase
+// habia que esperar a que TODA la ronda actual estuviera resuelta
+// (advanceBracketRound exigia el cierre completo de la fase). Ahora, en
+// cuanto se resuelve una partida, se comprueba si su pareja "hermana" (el
+// otro emparejamiento que le toca enfrentar en la siguiente fase, segun el
+// orden de creacion) tambien esta resuelta -- si es asi, se crea ya esa
+// partida de la fase siguiente, sin esperar al resto de la ronda.
+//
+// Se llama tras cada registerMatchResult; es idempotente (no crea un
+// duplicado si la partida de la fase siguiente ya existe), asi que es
+// seguro llamarla de mas -- por ejemplo, ambas piernas de una partida a
+// ida/vuelta disparan esta funcion, pero solo la segunda (cuando ya hay
+// resultado agregado) llega a crear algo.
+async function maybeAdvancePartialBracket(tournament, match) {
+  if (match.isThirdPlaceMatch) return null;
+  const next = nextPhase(match.phase);
+  if (!next) return null; // 'final', o una fase sin bracket (group_stage/swiss/league_round)
+
+  const phaseMatches = await TournamentMatch.find({
+    tournamentId: tournament._id,
+    phase: match.phase
+  }).sort({ createdAt: 1 });
+
+  const grouped = groupMatchesByTiedPair(phaseMatches);
+  const matchId = match._id.toString();
+  const idx = grouped.findIndex((group) => group.some((m) => m._id.toString() === matchId));
+  if (idx === -1) return null;
+
+  const winnerId = resolveBracketWinner(grouped[idx]);
+  if (!winnerId) return null; // ida/vuelta: la otra pierna aun no esta jugada
+
+  // El orden de creacion empareja consecutivos (0-1, 2-3...), igual que ya
+  // hacia advanceBracketRound al construir winners[i] vs winners[i+1].
+  const siblingIdx = idx % 2 === 0 ? idx + 1 : idx - 1;
+  if (siblingIdx < 0 || siblingIdx >= grouped.length) return null;
+
+  const siblingWinnerId = resolveBracketWinner(grouped[siblingIdx]);
+  if (!siblingWinnerId) return null; // el otro lado del emparejamiento sigue en curso
+
+  const lowerIdx = Math.min(idx, siblingIdx);
+  const player1Id = lowerIdx === idx ? winnerId : siblingWinnerId;
+  const player2Id = lowerIdx === idx ? siblingWinnerId : winnerId;
+
+  const alreadyExists = await TournamentMatch.exists({
+    tournamentId: tournament._id,
+    phase: next,
+    isThirdPlaceMatch: { $ne: true },
+    $or: [
+      { player1Id, player2Id },
+      { player1Id: player2Id, player2Id: player1Id }
+    ]
+  });
+  if (alreadyExists) return null;
+
+  const createdMatches = await createRealMatch(tournament, next, { player1Id, player2Id });
+
+  // 3er/4º puesto: solo al avanzar desde semifinal, con los perdedores de
+  // ambos lados (mismo criterio que ya usaba advanceBracketRound).
+  if (match.phase === 'semifinal' && tournament.thirdPlacePlayoff) {
+    const loserOf = (group, winner) => {
+      const anyMatch = group[0];
+      const p1 = anyMatch.player1Id.toString();
+      const p2 = anyMatch.player2Id ? anyMatch.player2Id.toString() : null;
+      return p1 === winner ? p2 : p1;
+    };
+    const loser1 = loserOf(grouped[idx], winnerId);
+    const loser2 = loserOf(grouped[siblingIdx], siblingWinnerId);
+    if (loser1 && loser2) {
+      const thirdPlaceMatch = await TournamentMatch.create({
+        tournamentId: tournament._id,
+        phase: 'final',
+        player1Id: loser1,
+        player2Id: loser2,
+        leg: 'single',
+        isThirdPlaceMatch: true
+      });
+      createdMatches.push(thirdPlaceMatch);
+    }
+  }
+
+  return { phase: next, matches: createdMatches };
+}
+
+module.exports = {
+  createRealMatch,
+  createEliminationEntryMatches,
+  groupMatchesByTiedPair,
+  resolveBracketWinner,
+  maybeAdvancePartialBracket
+};

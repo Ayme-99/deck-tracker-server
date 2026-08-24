@@ -149,6 +149,116 @@ describe('registerMatchResult', () => {
     expect(tMatch.winnerId).toBeNull();
     expect(Match.create).not.toHaveBeenCalled();
   });
+
+  describe('avance parcial del bracket (issue #206)', () => {
+    // Semifinal con 2 emparejamientos (sf1: p1 vs p2, sf2: p3 vs p4).
+    // Se registra el resultado de sf2 -- sf1 ya estaba resuelto de antes
+    // (p1 gano). No hace falta esperar a que se resuelva ninguna otra cosa.
+    function setupSemifinalMatches() {
+      const sf1 = { _id: 'sf1', tournamentId: 'tid1', phase: 'semifinal', leg: 'single', status: 'completed', player1Id: 'p1', player2Id: 'p2', winnerId: 'p1', isThirdPlaceMatch: false, tiedMatchId: null };
+      const sf2 = { _id: 'sf2', tournamentId: 'tid1', phase: 'semifinal', leg: 'single', status: 'pending', player1Id: 'p3', player2Id: 'p4', winnerId: null, isThirdPlaceMatch: false, tiedMatchId: null, save: jest.fn() };
+      TournamentMatch.findOne.mockResolvedValue(sf2);
+      TournamentMatch.find.mockReturnValue({ sort: jest.fn().mockResolvedValue([sf1, sf2]) });
+      return { sf1, sf2 };
+    }
+
+    test('crea la final automaticamente en cuanto se conocen los 2 finalistas', async () => {
+      Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, thirdPlacePlayoff: false, eliminationFormat: 'single' });
+      const { sf2 } = setupSemifinalMatches();
+
+      const player3 = { _id: 'p3', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      const player4 = { _id: 'p4', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      TournamentPlayer.findById.mockImplementation(async (id) => (id === 'p3' ? player3 : player4));
+
+      TournamentMatch.exists.mockResolvedValue(false);
+      TournamentMatch.create.mockImplementation(async (data) => ({ ...data, _id: 'final1' }));
+
+      const req = {
+        params: { id: 'tid1', matchId: 'sf2' },
+        userId: USER_ID,
+        body: { player1Prizes: 6, player2Prizes: 1, winnerId: 'p3', isDraw: false }
+      };
+      const res = mockRes();
+      await controller.registerMatchResult(req, res);
+
+      expect(sf2.winnerId).toBe('p3');
+      // sf1 gano p1 (indice 0), sf2 gano p3 (indice 1) -- se respeta el
+      // orden de creacion: player1Id = ganador del indice mas bajo.
+      expect(TournamentMatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tournamentId: 'tid1', phase: 'final', player1Id: 'p1', player2Id: 'p3', leg: 'single' })
+      );
+    });
+
+    test('no crea nada todavia si el otro lado de la semifinal sigue pendiente', async () => {
+      Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, thirdPlacePlayoff: false });
+      const sf1 = { _id: 'sf1', tournamentId: 'tid1', phase: 'semifinal', leg: 'single', status: 'pending', player1Id: 'p1', player2Id: 'p2', winnerId: null, isThirdPlaceMatch: false, tiedMatchId: null };
+      const sf2 = { _id: 'sf2', tournamentId: 'tid1', phase: 'semifinal', leg: 'single', status: 'pending', player1Id: 'p3', player2Id: 'p4', winnerId: null, isThirdPlaceMatch: false, tiedMatchId: null, save: jest.fn() };
+      TournamentMatch.findOne.mockResolvedValue(sf2);
+      TournamentMatch.find.mockReturnValue({ sort: jest.fn().mockResolvedValue([sf1, sf2]) });
+
+      const player3 = { _id: 'p3', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      const player4 = { _id: 'p4', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      TournamentPlayer.findById.mockImplementation(async (id) => (id === 'p3' ? player3 : player4));
+
+      const req = {
+        params: { id: 'tid1', matchId: 'sf2' },
+        userId: USER_ID,
+        body: { player1Prizes: 6, player2Prizes: 1, winnerId: 'p3', isDraw: false }
+      };
+      const res = mockRes();
+      await controller.registerMatchResult(req, res);
+
+      expect(TournamentMatch.create).not.toHaveBeenCalled();
+    });
+
+    test('con tercer/cuarto puesto activado, tambien crea esa partida con los 2 perdedores', async () => {
+      Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, thirdPlacePlayoff: true, eliminationFormat: 'single' });
+      setupSemifinalMatches();
+
+      const player3 = { _id: 'p3', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      const player4 = { _id: 'p4', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      TournamentPlayer.findById.mockImplementation(async (id) => (id === 'p3' ? player3 : player4));
+
+      TournamentMatch.exists.mockResolvedValue(false);
+      TournamentMatch.create.mockImplementation(async (data) => ({ ...data, _id: 'm' + Math.random() }));
+
+      const req = {
+        params: { id: 'tid1', matchId: 'sf2' },
+        userId: USER_ID,
+        body: { player1Prizes: 6, player2Prizes: 1, winnerId: 'p3', isDraw: false }
+      };
+      const res = mockRes();
+      await controller.registerMatchResult(req, res);
+
+      expect(TournamentMatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({ phase: 'final', player1Id: 'p1', player2Id: 'p3' })
+      );
+      expect(TournamentMatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({ phase: 'final', player1Id: 'p4', player2Id: 'p2', isThirdPlaceMatch: true })
+      );
+    });
+
+    test('no duplica la final si ya existe (idempotente)', async () => {
+      Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, thirdPlacePlayoff: false });
+      setupSemifinalMatches();
+
+      const player3 = { _id: 'p3', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      const player4 = { _id: 'p4', isOrganizer: false, wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, save: jest.fn() };
+      TournamentPlayer.findById.mockImplementation(async (id) => (id === 'p3' ? player3 : player4));
+
+      TournamentMatch.exists.mockResolvedValue(true); // la final ya existe
+
+      const req = {
+        params: { id: 'tid1', matchId: 'sf2' },
+        userId: USER_ID,
+        body: { player1Prizes: 6, player2Prizes: 1, winnerId: 'p3', isDraw: false }
+      };
+      const res = mockRes();
+      await controller.registerMatchResult(req, res);
+
+      expect(TournamentMatch.create).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('getHostedStandings', () => {

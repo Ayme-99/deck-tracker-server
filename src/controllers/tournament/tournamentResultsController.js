@@ -9,6 +9,7 @@ const TournamentPlayer = require('../../models/TournamentPlayer');
 const TournamentMatch = require('../../models/TournamentMatch');
 const Match = require('../../models/Match');
 const { calculateOMW } = require('../../services/tiebreakerService');
+const { maybeAdvancePartialBracket } = require('../../services/bracketEntryService');
 
 // --- Resultados y clasificacion (transversal a todos los formatos) ---
 
@@ -196,7 +197,12 @@ exports.registerMatchResult = async (req, res) => {
     await createMatchIfOrganizer(player1, player2, player1Prizes, player2Prizes);
     await createMatchIfOrganizer(player2, player1, player2Prizes, player1Prizes);
 
-    res.json({ match: tMatch, player1, player2 });
+    // Issue #206: si con este resultado ya se conocen ambos clasificados
+    // de un emparejamiento de la siguiente fase, se crea esa partida ya
+    // mismo, sin esperar a que termine el resto de la ronda actual.
+    const advanced = await maybeAdvancePartialBracket(tournament, tMatch);
+
+    res.json({ match: tMatch, player1, player2, advanced });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
