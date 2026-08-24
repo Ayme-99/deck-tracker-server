@@ -12,6 +12,59 @@ const { calculateOMW } = require('../../services/tiebreakerService');
 
 // --- Resultados y clasificacion (transversal a todos los formatos) ---
 
+// player.wins/losses/points/prizeDifferential son acumulados de TODO el
+// torneo (issue #205: en groups_elimination, una vez se pasa a la
+// eliminatoria esos contadores se siguen incrementando, mezclando resultados
+// de fase de grupos con los de bracket -- la clasificacion por grupo dejaba
+// de tener sentido). Para esa estructura, se recalculan las stats de cada
+// jugador solo a partir de las partidas completadas de 'group_stage',
+// ignorando los contadores acumulados del documento.
+async function computeGroupStageStats(tournamentId, players) {
+  const matches = await TournamentMatch.find({
+    tournamentId,
+    phase: 'group_stage',
+    status: 'completed'
+  });
+
+  const statsByPlayer = new Map(players.map((p) => [
+    p._id.toString(),
+    { wins: 0, losses: 0, draws: 0, points: 0, prizeDifferential: 0, opponentIds: [] }
+  ]));
+
+  for (const match of matches) {
+    const id1 = match.player1Id.toString();
+    const id2 = match.player2Id?.toString();
+    if (!id2) continue; // bye: no cuenta para OMW ni enfrentamientos
+    const s1 = statsByPlayer.get(id1);
+    const s2 = statsByPlayer.get(id2);
+    if (!s1 || !s2) continue; // jugador borrado desde entonces
+
+    s1.opponentIds.push(id2);
+    s2.opponentIds.push(id1);
+
+    const diff = (match.player1Prizes || 0) - (match.player2Prizes || 0);
+    s1.prizeDifferential += diff;
+    s2.prizeDifferential -= diff;
+
+    if (match.isDraw) {
+      s1.draws += 1;
+      s2.draws += 1;
+      s1.points += 1;
+      s2.points += 1;
+    } else if (String(match.winnerId) === id1) {
+      s1.wins += 1;
+      s1.points += 3;
+      s2.losses += 1;
+    } else {
+      s2.wins += 1;
+      s2.points += 3;
+      s1.losses += 1;
+    }
+  }
+
+  return statsByPlayer;
+}
+
 exports.getHostedStandings = async (req, res) => {
   try {
     const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
@@ -19,17 +72,29 @@ exports.getHostedStandings = async (req, res) => {
 
     const players = await TournamentPlayer.find({ tournamentId: tournament._id });
 
-    const omwMap = calculateOMW(players.map((p) => ({
-      id: p._id.toString(),
+    const groupStageStats = tournament.structure === 'groups_elimination'
+      ? await computeGroupStageStats(tournament._id, players)
+      : null;
+
+    const statsFor = (p) => groupStageStats?.get(p._id.toString()) ?? {
       wins: p.wins,
       losses: p.losses,
       draws: p.draws,
+      points: p.points,
+      prizeDifferential: p.prizeDifferential,
       opponentIds: p.opponentIds.map((id) => id.toString())
-    })));
+    };
+
+    const omwMap = calculateOMW(players.map((p) => {
+      const stats = statsFor(p);
+      return { id: p._id.toString(), wins: stats.wins, losses: stats.losses, draws: stats.draws, opponentIds: stats.opponentIds };
+    }));
 
     const sorted = [...players].sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      if (b.prizeDifferential !== a.prizeDifferential) return b.prizeDifferential - a.prizeDifferential;
+      const statsA = statsFor(a);
+      const statsB = statsFor(b);
+      if (statsB.points !== statsA.points) return statsB.points - statsA.points;
+      if (statsB.prizeDifferential !== statsA.prizeDifferential) return statsB.prizeDifferential - statsA.prizeDifferential;
       return omwMap.get(b._id.toString()) - omwMap.get(a._id.toString());
     });
 
@@ -37,13 +102,14 @@ exports.getHostedStandings = async (req, res) => {
     let lastPosition = 0;
 
     const standings = sorted.map((p, index) => {
+      const stats = statsFor(p);
       const omwPercentage = omwMap.get(p._id.toString());
       const tiedWithPrevious = last
-        && p.points === last.points
-        && p.prizeDifferential === last.prizeDifferential
+        && stats.points === last.points
+        && stats.prizeDifferential === last.prizeDifferential
         && omwPercentage === last.omwPercentage;
       const position = tiedWithPrevious ? lastPosition : index + 1;
-      last = { points: p.points, prizeDifferential: p.prizeDifferential, omwPercentage };
+      last = { points: stats.points, prizeDifferential: stats.prizeDifferential, omwPercentage };
       lastPosition = position;
 
       return {
@@ -51,11 +117,11 @@ exports.getHostedStandings = async (req, res) => {
         playerId: p._id,
         name: p.name,
         deckArchetype: p.deckArchetype,
-        points: p.points,
-        wins: p.wins,
-        losses: p.losses,
-        draws: p.draws,
-        prizeDifferential: p.prizeDifferential,
+        points: stats.points,
+        wins: stats.wins,
+        losses: stats.losses,
+        draws: stats.draws,
+        prizeDifferential: stats.prizeDifferential,
         omwPercentage: Math.round(omwPercentage * 1000) / 10, // 0-100, 1 decimal
         dropped: p.dropped,
         groupName: p.groupName

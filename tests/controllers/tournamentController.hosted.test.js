@@ -151,6 +151,61 @@ describe('registerMatchResult', () => {
   });
 });
 
+describe('getHostedStandings', () => {
+  test('en groups_elimination, ignora las victorias de la eliminatoria y usa solo group_stage', async () => {
+    // Issue #205: p1.wins/points estan "contaminados" con una victoria de
+    // la eliminatoria (fase posterior a los grupos) ademas de la de grupos.
+    // La clasificacion de grupos debe reflejar solo el group_stage.
+    Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, structure: 'groups_elimination' });
+    const players = [
+      {
+        _id: 'p1', name: 'A', deckArchetype: 'Charizard ex', groupName: 'Grupo 1', dropped: false,
+        wins: 2, losses: 0, draws: 0, points: 6, prizeDifferential: 10, opponentIds: ['p2', 'p3']
+      },
+      {
+        _id: 'p2', name: 'B', deckArchetype: 'Gardevoir ex', groupName: 'Grupo 1', dropped: false,
+        wins: 0, losses: 1, draws: 0, points: 0, prizeDifferential: -5, opponentIds: ['p1']
+      }
+    ];
+    TournamentPlayer.find.mockResolvedValue(players);
+
+    TournamentMatch.find.mockResolvedValue([
+      // Partida de grupos: p1 gana 6-1 (esta si cuenta)
+      { player1Id: 'p1', player2Id: 'p2', winnerId: 'p1', isDraw: false, player1Prizes: 6, player2Prizes: 1 }
+    ]);
+
+    const req = { params: { id: 'tid1' }, userId: USER_ID };
+    const res = mockRes();
+    await controller.getHostedStandings(req, res);
+
+    expect(TournamentMatch.find).toHaveBeenCalledWith(
+      expect.objectContaining({ tournamentId: 'tid1', phase: 'group_stage', status: 'completed' })
+    );
+
+    const { standings } = res.json.mock.calls[0][0];
+    const a = standings.find((s) => s.playerId === 'p1');
+    // Sin el fix, esto seria wins: 2, points: 6 (arrastrando la victoria de la eliminatoria)
+    expect(a.wins).toBe(1);
+    expect(a.points).toBe(3);
+    expect(a.prizeDifferential).toBe(5);
+  });
+
+  test('en swiss (sin grupos), usa los contadores acumulados del jugador tal cual', async () => {
+    Tournament.findOne.mockResolvedValue({ _id: 'tid1', userId: USER_ID, structure: 'swiss' });
+    TournamentPlayer.find.mockResolvedValue([
+      { _id: 'p1', name: 'A', dropped: false, wins: 3, losses: 1, draws: 0, points: 9, prizeDifferential: 8, opponentIds: [] }
+    ]);
+
+    const req = { params: { id: 'tid1' }, userId: USER_ID };
+    const res = mockRes();
+    await controller.getHostedStandings(req, res);
+
+    expect(TournamentMatch.find).not.toHaveBeenCalled();
+    const { standings } = res.json.mock.calls[0][0];
+    expect(standings[0]).toMatchObject({ wins: 3, losses: 1, points: 9, prizeDifferential: 8 });
+  });
+});
+
 describe('closePhaseToElimination', () => {
   test('swiss_elimination sin ronda previa (extra=0): empareja de verdad, sin byes falsos', async () => {
     const tournamentDoc = { _id: 'tid1', userId: USER_ID, structure: 'swiss_elimination', eliminationFormat: 'single_match', save: jest.fn() };
