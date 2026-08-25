@@ -203,9 +203,9 @@ Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_eliminatio
 Todas las rutas protegidas requieren el header:
 Authorization: Bearer <token>
 
-- El token se obtiene en `/api/auth/register` o `/api/auth/login` y no tiene expiración (sesión indefinida hasta que el usuario cierre sesión manualmente).
+- El token se obtiene en `/api/auth/register` o `/api/auth/login` y caduca según `JWT_EXPIRES_IN` (30 días por defecto). Al caducar, el cliente lo trata como sesión expirada y redirige a Login.
 - Los endpoints `/register` y `/login` tienen un límite de 10 intentos por IP cada 15 minutos para mitigar fuerza bruta y spam.
-- Un `401` en cualquier ruta protegida indica token ausente o inválido; el cliente lo trata como sesión caducada solo si la petición llevaba token.
+- Un `401` en cualquier ruta protegida indica token ausente, inválido o caducado; el cliente lo trata como sesión caducada solo si la petición llevaba token.
 
 ## Scripts de mantenimiento
 
