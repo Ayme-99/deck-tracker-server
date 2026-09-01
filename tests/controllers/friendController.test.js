@@ -39,9 +39,10 @@ describe('friendController.sendRequest', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  test('400 si ya existe una solicitud pendiente', async () => {
+  test('400 si ya existe una solicitud pendiente enviada por mi mismo', async () => {
     User.findOne.mockResolvedValue({ _id: OTHER_ID });
-    FriendRequest.findOne.mockResolvedValue({ status: 'pending' });
+    // requester === USER_ID: la solicitud pendiente ya la envie yo antes
+    FriendRequest.findOne.mockResolvedValue({ status: 'pending', requester: USER_ID });
 
     const req = { body: { username: 'amigo' }, userId: USER_ID };
     const res = mockRes();
@@ -49,6 +50,23 @@ describe('friendController.sendRequest', () => {
     await controller.sendRequest(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('issue #97: acepta automaticamente si la solicitud pendiente es la contraria (cruzada)', async () => {
+    User.findOne.mockResolvedValue({ _id: OTHER_ID });
+    // requester === OTHER_ID: el destinatario ya me habia enviado la solicitud a mi
+    const existing = { status: 'pending', requester: OTHER_ID, save: jest.fn().mockResolvedValue(true) };
+    FriendRequest.findOne.mockResolvedValue(existing);
+
+    const req = { body: { username: 'amigo' }, userId: USER_ID };
+    const res = mockRes();
+
+    await controller.sendRequest(req, res);
+
+    expect(existing.status).toBe('accepted');
+    expect(existing.save).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(existing);
   });
 
   test('400 si la relacion esta bloqueada', async () => {

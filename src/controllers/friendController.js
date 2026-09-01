@@ -51,6 +51,16 @@ exports.sendRequest = async (req, res) => {
         return res.status(400).json({ error: 'No es posible enviar la solicitud' });
       }
       if (existing.status === 'pending') {
+        // Issue #97: si la solicitud pendiente ya existente es justo la
+        // contraria (el destinatario ya me la habia enviado a mi), se
+        // acepta automaticamente en vez de dar error -- es el caso obvio
+        // de "los dos querian ser amigos a la vez".
+        if (existing.requester.toString() === recipient._id.toString()) {
+          existing.status = 'accepted';
+          existing.respondedAt = new Date();
+          await existing.save();
+          return res.json(existing);
+        }
         return res.status(400).json({ error: 'Ya existe una solicitud pendiente con este usuario' });
       }
       if (existing.status === 'accepted') {
