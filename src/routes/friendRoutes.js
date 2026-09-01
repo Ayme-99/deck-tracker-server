@@ -13,6 +13,7 @@ router.post('/requests/:id/reject', controller.rejectRequest);
 
 router.get('/', controller.listFriends);
 router.delete('/:friendId', controller.removeFriend);
+router.get('/:friendId/decks', controller.listFriendDecks);
 
 router.post('/:userId/block', controller.blockUser);
 router.delete('/:userId/block', controller.unblockUser);

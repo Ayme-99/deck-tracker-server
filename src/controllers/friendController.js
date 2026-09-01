@@ -1,5 +1,7 @@
 const FriendRequest = require('../models/FriendRequest');
 const User = require('../models/User');
+const Deck = require('../models/Deck');
+const { computeDeckOverview } = require('../services/deckStatsService');
 
 // Busca la relacion existente entre dos usuarios, en cualquier direccion
 async function findRelation(userA, userB) {
@@ -206,6 +208,32 @@ exports.blockUser = async (req, res) => {
     res.json(relation);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+};
+
+// Lista los mazos de un amigo, con su resumen de stats (issue #93). Solo
+// accesible si hay una amistad aceptada -- nunca mazos de un usuario
+// cualquiera sin esa relacion.
+exports.listFriendDecks = async (req, res) => {
+  try {
+    const { friendId } = req.params;
+
+    const relation = await findRelation(req.userId, friendId);
+    if (!relation || relation.status !== 'accepted') {
+      return res.status(403).json({ error: 'Solo puedes consultar los mazos de tus amigos' });
+    }
+
+    const decks = await Deck.find({ userId: friendId });
+    const decksWithOverview = await Promise.all(
+      decks.map(async (deck) => ({
+        ...deck.toObject(),
+        overview: await computeDeckOverview(deck._id, friendId)
+      }))
+    );
+
+    res.json(decksWithOverview);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
