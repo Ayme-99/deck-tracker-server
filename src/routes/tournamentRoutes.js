@@ -7,6 +7,7 @@ const eliminationController = require('../controllers/tournament/tournamentElimi
 const groupsLeagueController = require('../controllers/tournament/tournamentGroupsLeagueController');
 const resultsController = require('../controllers/tournament/tournamentResultsController');
 const transferController = require('../controllers/tournament/tournamentTransferController');
+const inviteController = require('../controllers/tournamentInviteController');
 const protect = require('../middleware/authMiddleware');
 
 router.use(protect); // aplica el middleware a TODAS las rutas de este archivo
@@ -23,6 +24,7 @@ router.get('/:id/hosted-standings', resultsController.getHostedStandings);
 router.get('/:id/hosted-matches', resultsController.getHostedMatches);
 router.post('/:id/advance-bracket', eliminationController.advanceBracketRound);
 router.post('/:id/resolve-preliminary-entry', eliminationController.resolvePreliminaryEntry);
+router.post('/:id/invites', inviteController.sendInvite);
 router.post('/:id/players', playerController.createPlayer);
 router.get('/:id/players', playerController.getPlayers);
 router.put('/:id/players/:playerId', playerController.updatePlayer);
