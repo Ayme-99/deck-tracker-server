@@ -89,26 +89,57 @@ const tournamentPlayerSchema = new mongoose.Schema({
     default: false
   },
 
-  // Solo si isOrganizer es true: referencia al Deck real del organizador.
-  // Necesario para poder generar automaticamente un Match normal (modelo
-  // de 'tracked') cada vez que se registra un resultado de esta inscripcion,
-  // de forma que cuente en las stats/rachas/matchups reales del usuario.
+  // Solo si isOrganizer es true, o si esta inscripcion esta vinculada a la
+  // cuenta de un amigo (linkedUserId): referencia al Deck real de esa
+  // cuenta. Necesario para poder generar automaticamente un Match normal
+  // (modelo de 'tracked') cada vez que se registra un resultado de esta
+  // inscripcion, de forma que cuente en las stats/rachas/matchups reales
+  // del usuario.
   deckId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Deck',
     default: null
+  },
+
+  // Issue #94: cuenta de usuario (amigo) a la que esta vinculada esta
+  // inscripcion, si la hay -- independiente de isOrganizer (que sigue
+  // siendo solo para la inscripcion del propio dueño del torneo). Null
+  // para inscripciones sin cuenta (la mayoria de jugadores en un torneo
+  // hosted tipico).
+  //
+  // Alcance de la #94: solo el modelo de datos. Como/cuando se rellena
+  // este campo (flujo de invitacion) y si un invitado puede autenticarse
+  // para gestionar sus propios resultados queda para issues futuras
+  // (server#95 y siguientes) -- de momento nada en el backend lee ni
+  // depende de este campo salvo la validacion de deckId de abajo.
+  linkedUserId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+
+  // Rol dentro del torneo, solo relevante si linkedUserId esta informado.
+  // admin: en el futuro (server#95+) podra registrar/editar sus propias
+  // partidas. guest: solo el organizador registra sus resultados.
+  role: {
+    type: String,
+    enum: ['admin', 'guest'],
+    default: null
   }
 }, { timestamps: true });
 
-// deckId es obligatorio unicamente cuando isOrganizer es true (el resto de
-// jugadores no tienen cuenta ni Deck real en la app).
+// deckId es obligatorio cuando isOrganizer es true, o cuando la inscripcion
+// esta vinculada a la cuenta de un amigo (linkedUserId) -- en ambos casos
+// hace falta saber que Deck real de esa cuenta usar para generar el Match
+// (ver comentario de deckId arriba). El resto de jugadores no tienen cuenta
+// ni Deck real en la app.
 //
 // Recordatorio del bug de #18: bajo Mongoose 9.x, los hooks pre('validate')
 // deben ser funciones normales que lanzan el error directamente (throw),
 // NUNCA el estilo callback function(next) { ... next(err) }.
 tournamentPlayerSchema.pre('validate', function() {
-  if (this.isOrganizer && !this.deckId) {
-    throw new Error('deckId es obligatorio cuando isOrganizer es true');
+  if ((this.isOrganizer || this.linkedUserId) && !this.deckId) {
+    throw new Error('deckId es obligatorio cuando isOrganizer es true o hay un linkedUserId');
   }
 });
 

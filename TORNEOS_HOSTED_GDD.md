@@ -36,10 +36,14 @@ prizeDifferential: { type: Number, default: 0 }, // suma(premios propios) - suma
 opponentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'TournamentPlayer' }], // rivales ya enfrentados, para swiss
 byeReceived: { type: Boolean, default: false }, // si ya recibio un bye, para no repetir
 isOrganizer: { type: Boolean, default: false }, // si este jugador es el propio usuario dueño del torneo
-deckId: { type: mongoose.Schema.Types.ObjectId, ref: 'Deck', default: null } // solo si isOrganizer: true
+deckId: { type: mongoose.Schema.Types.ObjectId, ref: 'Deck', default: null }, // obligatorio si isOrganizer o linkedUserId
+linkedUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // cuenta de un amigo vinculada (issue #94)
+role: { type: String, enum: ['admin', 'guest'], default: null } // solo relevante si linkedUserId esta informado
 ```
 
 > **Stats reales del organizador.** Si el organizador participa con su(s) propio(s) mazo(s), cada inscripción con `isOrganizer: true` lleva su `deckId` real vinculado. Al registrar el resultado de un `TournamentMatch` donde interviene una inscripción `isOrganizer`, el backend debe **generar automáticamente un `Match` normal** (modelo de `tracked`, con `tournamentId`/`phase`/`round`) vinculado a ese `deckId`, para que el resultado cuente en las stats/rachas/matchups reales del usuario sin tener que registrarlo dos veces a mano. Si el organizador inscribe varios mazos, cada inscripción (`isOrganizer: true` + su propio `deckId`) genera `Match` independientes para el mazo correspondiente.
+>
+> **Amigos vinculados (issue #94, en construcción).** `linkedUserId` + `role` permiten en el futuro que una inscripción represente la cuenta de un amigo (no solo la del organizador), con el mismo objetivo de generar `Match` reales para sus stats. Por ahora es solo el modelo de datos: nada en el backend lee todavía estos campos salvo la validación de que `deckId` sea obligatorio cuando están presentes. Cómo se rellenan (flujo de invitación) y si un invitado con rol `admin` puede autenticarse para gestionar sus propios resultados queda para issues futuras (server#95 y siguientes).
 
 Un jugador puede inscribirse con **varios mazos** — esto significa que `deckArchetype` no basta como identificador único; se permite duplicar `name` con distinto `deckArchetype`, o bien un mismo jugador aparece como dos `TournamentPlayer` distintos (uno por mazo). **Decisión: cada inscripción (jugador + mazo) es un `TournamentPlayer` independiente.** Si la misma persona juega con dos mazos, son dos entradas distintas en la tabla — más simple de emparejar y puntuar, aunque signifique que "Juan con mazo A" y "Juan con mazo B" son entidades separadas de cara al torneo.
 
