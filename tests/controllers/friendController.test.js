@@ -1,8 +1,12 @@
 jest.mock('../../src/models/FriendRequest');
 jest.mock('../../src/models/User');
+jest.mock('../../src/models/Deck');
+jest.mock('../../src/services/deckStatsService');
 
 const FriendRequest = require('../../src/models/FriendRequest');
 const User = require('../../src/models/User');
+const Deck = require('../../src/models/Deck');
+const { computeDeckOverview } = require('../../src/services/deckStatsService');
 const controller = require('../../src/controllers/friendController');
 
 function mockRes() {
@@ -158,6 +162,47 @@ describe('friendController.removeFriend', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.any(String) })
     );
+  });
+});
+
+describe('friendController.listFriendDecks', () => {
+  test('403 si no hay amistad aceptada', async () => {
+    FriendRequest.findOne.mockResolvedValue(null);
+    const req = { params: { friendId: OTHER_ID }, userId: USER_ID };
+    const res = mockRes();
+
+    await controller.listFriendDecks(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(Deck.find).not.toHaveBeenCalled();
+  });
+
+  test('403 si la relacion existe pero no esta aceptada (ej. pendiente o bloqueada)', async () => {
+    FriendRequest.findOne.mockResolvedValue({ status: 'pending' });
+    const req = { params: { friendId: OTHER_ID }, userId: USER_ID };
+    const res = mockRes();
+
+    await controller.listFriendDecks(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('devuelve los mazos del amigo con su overview si la amistad esta aceptada', async () => {
+    FriendRequest.findOne.mockResolvedValue({ status: 'accepted' });
+    const deck = { _id: 'deck1', name: 'Charizard ex', toObject: () => ({ _id: 'deck1', name: 'Charizard ex' }) };
+    Deck.find.mockResolvedValue([deck]);
+    computeDeckOverview.mockResolvedValue({ totalMatches: 5, wins: 3, losses: 2, ties: 0, winRate: 60 });
+
+    const req = { params: { friendId: OTHER_ID }, userId: USER_ID };
+    const res = mockRes();
+
+    await controller.listFriendDecks(req, res);
+
+    expect(Deck.find).toHaveBeenCalledWith({ userId: OTHER_ID });
+    expect(computeDeckOverview).toHaveBeenCalledWith('deck1', OTHER_ID);
+    expect(res.json).toHaveBeenCalledWith([
+      expect.objectContaining({ _id: 'deck1', name: 'Charizard ex', overview: expect.objectContaining({ winRate: 60 }) })
+    ]);
   });
 });
 
