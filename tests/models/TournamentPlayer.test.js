@@ -62,4 +62,54 @@ describe('Modelo TournamentPlayer', () => {
     });
     await expect(player.validate()).resolves.toBeUndefined();
   });
+
+  // Issue #94: linkedUserId/role (vincular a la cuenta de un amigo)
+  describe('linkedUserId / role', () => {
+    test('por defecto son null', async () => {
+      const player = new TournamentPlayer({ tournamentId: tId, name: 'Sin vincular' });
+      await player.validate();
+      expect(player.linkedUserId).toBeNull();
+      expect(player.role).toBeNull();
+    });
+
+    test('rechaza linkedUserId sin deckId', async () => {
+      const player = new TournamentPlayer({
+        tournamentId: tId, name: 'Amigo', linkedUserId: new mongoose.Types.ObjectId(), role: 'admin'
+      });
+      await expect(player.validate()).rejects.toThrow(/deckId/i);
+    });
+
+    test('acepta linkedUserId con deckId y role admin', async () => {
+      const player = new TournamentPlayer({
+        tournamentId: tId,
+        name: 'Amigo admin',
+        linkedUserId: new mongoose.Types.ObjectId(),
+        role: 'admin',
+        deckId: new mongoose.Types.ObjectId()
+      });
+      await expect(player.validate()).resolves.toBeUndefined();
+    });
+
+    test('acepta linkedUserId con deckId y role guest', async () => {
+      const player = new TournamentPlayer({
+        tournamentId: tId,
+        name: 'Amigo invitado',
+        linkedUserId: new mongoose.Types.ObjectId(),
+        role: 'guest',
+        deckId: new mongoose.Types.ObjectId()
+      });
+      await expect(player.validate()).resolves.toBeUndefined();
+    });
+
+    test('rechaza un role que no sea admin ni guest', async () => {
+      const player = new TournamentPlayer({
+        tournamentId: tId,
+        name: 'Rol invalido',
+        linkedUserId: new mongoose.Types.ObjectId(),
+        role: 'owner',
+        deckId: new mongoose.Types.ObjectId()
+      });
+      await expect(player.validate()).rejects.toThrow();
+    });
+  });
 });
