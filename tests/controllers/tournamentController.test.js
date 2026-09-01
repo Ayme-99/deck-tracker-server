@@ -1,8 +1,10 @@
 jest.mock('../../src/models/Tournament');
 jest.mock('../../src/models/Match');
+jest.mock('../../src/models/TournamentPlayer');
 
 const Tournament = require('../../src/models/Tournament');
 const Match = require('../../src/models/Match');
+const TournamentPlayer = require('../../src/models/TournamentPlayer');
 const tournamentController = require('../../src/controllers/tournament/tournamentCrudController');
 
 // Helper para simular req/res de Express sin levantar un servidor real
@@ -21,6 +23,7 @@ afterEach(() => {
 
 describe('tournamentController.getTournaments', () => {
   test('devuelve data + pagination', async () => {
+    TournamentPlayer.find.mockReturnValue({ distinct: jest.fn().mockResolvedValue([]) });
     Tournament.find.mockReturnValue({
       sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
@@ -37,11 +40,32 @@ describe('tournamentController.getTournaments', () => {
       pagination: expect.objectContaining({ total: 1 })
     }));
   });
+
+  test('issue server#102: incluye tambien los torneos donde hay una inscripcion vinculada', async () => {
+    TournamentPlayer.find.mockReturnValue({ distinct: jest.fn().mockResolvedValue(['tid-invitado']) });
+    Tournament.find.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([])
+    });
+    Tournament.countDocuments.mockResolvedValue(0);
+
+    const req = { query: {}, userId: USER_ID };
+    const res = mockRes();
+    await tournamentController.getTournaments(req, res);
+
+    expect(Tournament.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $or: [{ userId: USER_ID }, { _id: { $in: ['tid-invitado'] } }]
+      })
+    );
+  });
 });
 
 describe('tournamentController.getTournamentById', () => {
-  test('404 si el torneo no existe', async () => {
+  test('404 si el torneo no existe (ni como dueño ni como jugador vinculado)', async () => {
     Tournament.findOne.mockResolvedValue(null);
+    TournamentPlayer.findOne.mockResolvedValue(null);
     const req = { params: { id: 'abc' }, userId: USER_ID };
     const res = mockRes();
 
@@ -49,6 +73,21 @@ describe('tournamentController.getTournamentById', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Torneo no encontrado' });
+  });
+
+  test('issue server#102: accesible para un jugador vinculado aunque no sea el dueño', async () => {
+    Tournament.findOne.mockResolvedValue(null); // no es el dueño
+    TournamentPlayer.findOne.mockResolvedValue({ linkedUserId: USER_ID }); // pero esta vinculado
+    const tournamentDoc = { toObject: () => ({ _id: 'abc', name: 'Torneo de un amigo' }) };
+    Tournament.findById.mockResolvedValue(tournamentDoc);
+    Match.find.mockReturnValue({ sort: jest.fn().mockResolvedValue([]) });
+
+    const req = { params: { id: 'abc' }, userId: USER_ID };
+    const res = mockRes();
+    await tournamentController.getTournamentById(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ name: 'Torneo de un amigo' }));
   });
 
   test('devuelve el torneo junto a sus matches', async () => {

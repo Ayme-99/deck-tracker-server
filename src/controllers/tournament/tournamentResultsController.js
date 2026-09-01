@@ -10,6 +10,7 @@ const TournamentMatch = require('../../models/TournamentMatch');
 const Match = require('../../models/Match');
 const { calculateOMW } = require('../../services/tiebreakerService');
 const { maybeAdvancePartialBracket } = require('../../services/bracketEntryService');
+const { findReadableTournament } = require('../../services/tournamentAccessService');
 
 // --- Resultados y clasificacion (transversal a todos los formatos) ---
 
@@ -68,7 +69,8 @@ async function computeGroupStageStats(tournamentId, players) {
 
 exports.getHostedStandings = async (req, res) => {
   try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    // Issue server#102: tambien accesible por un jugador vinculado.
+    const tournament = await findReadableTournament(req.params.id, req.userId);
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const players = await TournamentPlayer.find({ tournamentId: tournament._id });
@@ -210,7 +212,8 @@ exports.registerMatchResult = async (req, res) => {
 
 exports.getHostedMatches = async (req, res) => {
   try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    // Issue server#102: tambien accesible por un jugador vinculado.
+    const tournament = await findReadableTournament(req.params.id, req.userId);
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const matches = await TournamentMatch.find({ tournamentId: tournament._id })
