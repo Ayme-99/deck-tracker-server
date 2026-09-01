@@ -3,8 +3,10 @@
 // unico archivo).
 
 const Tournament = require('../../models/Tournament');
+const TournamentPlayer = require('../../models/TournamentPlayer');
 const Match = require('../../models/Match');
 const mongoose = require('mongoose');
+const { findReadableTournament } = require('../../services/tournamentAccessService');
 
 exports.getTournaments = async (req, res) => {
   try {
@@ -12,12 +14,18 @@ exports.getTournaments = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
+    // Issue server#102: incluye tambien los torneos hosted donde el usuario
+    // tiene una inscripcion vinculada (invitacion aceptada), no solo los
+    // que posee.
+    const linkedTournamentIds = await TournamentPlayer.find({ linkedUserId: req.userId }).distinct('tournamentId');
+    const filter = { $or: [{ userId: req.userId }, { _id: { $in: linkedTournamentIds } }] };
+
     const [tournaments, total] = await Promise.all([
-      Tournament.find({ userId: req.userId })
+      Tournament.find(filter)
         .sort({ date: -1 })
         .skip(skip)
         .limit(limit),
-      Tournament.countDocuments({ userId: req.userId })
+      Tournament.countDocuments(filter)
     ]);
 
     res.json({
@@ -36,7 +44,7 @@ exports.getTournaments = async (req, res) => {
 
 exports.getTournamentById = async (req, res) => {
   try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    const tournament = await findReadableTournament(req.params.id, req.userId);
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     // Partidas del torneo, agrupadas visualmente por fase/ronda en el propio

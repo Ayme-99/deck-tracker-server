@@ -3,6 +3,7 @@
 
 const Tournament = require('../../models/Tournament');
 const TournamentPlayer = require('../../models/TournamentPlayer');
+const { findReadableTournament } = require('../../services/tournamentAccessService');
 
 exports.createPlayer = async (req, res) => {
   try {
@@ -19,7 +20,9 @@ exports.createPlayer = async (req, res) => {
 
 exports.getPlayers = async (req, res) => {
   try {
-    const tournament = await Tournament.findOne({ _id: req.params.id, userId: req.userId });
+    // Issue server#102: tambien accesible por un jugador vinculado, no
+    // solo el dueño del torneo.
+    const tournament = await findReadableTournament(req.params.id, req.userId);
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const players = await TournamentPlayer.find({ tournamentId: tournament._id }).sort({ name: 1 });
