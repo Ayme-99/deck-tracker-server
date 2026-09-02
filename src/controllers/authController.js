@@ -7,6 +7,11 @@ const { sendVerificationEmail } = require('../services/emailService');
 // demasiado rapido, pero sin dejarlo abierto indefinidamente.
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Cooldown entre reenvios del correo de verificacion, independiente del
+// rate limit por IP (que permite hasta 10 en 15 minutos -- demasiado para
+// esto en concreto).
+const RESEND_COOLDOWN_MS = 60 * 1000;
+
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 // Caducidad de sesion (issue #82): antes los JWT no caducaban nunca.
@@ -48,7 +53,8 @@ exports.register = async (req, res) => {
       password,
       email,
       emailVerificationToken: verificationToken,
-      emailVerificationExpires: new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS)
+      emailVerificationExpires: new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS),
+      emailVerificationLastSentAt: new Date()
     });
     await user.save();
 
@@ -68,11 +74,61 @@ exports.register = async (req, res) => {
   }
 };
 
+// Pagina HTML minima para el resultado de verificar el email (issue #268):
+// quien hace clic en el enlace del correo llega aqui desde su navegador,
+// no desde la app, asi que hace falta una pagina de verdad, no solo texto
+// plano.
+function verificationResultPage({ success, title, message }) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deck Tracker</title>
+<style>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0f1115;
+    color: #e8eaed;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .card {
+    max-width: 420px;
+    margin: 24px;
+    padding: 32px 28px;
+    background: #1a1d24;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  }
+  .icon { font-size: 48px; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0 0 8px; color: ${success ? '#43a047' : '#e53935'}; }
+  p { font-size: 15px; line-height: 1.5; color: #b0b3b8; margin: 0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${success ? '✅' : '⚠️'}</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+  </div>
+</body>
+</html>`;
+}
+
 exports.verifyEmail = async (req, res) => {
   try {
     const { token } = req.query;
     if (!token) {
-      return res.status(400).send('Enlace de verificación inválido.');
+      return res.status(400).send(verificationResultPage({
+        success: false,
+        title: 'Enlace inválido',
+        message: 'Este enlace de verificación no es válido.'
+      }));
     }
 
     const user = await User.findOne({
@@ -81,7 +137,11 @@ exports.verifyEmail = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).send('El enlace de verificación no es válido o ha caducado. Pide que se reenvíe desde tu perfil en la app.');
+      return res.status(400).send(verificationResultPage({
+        success: false,
+        title: 'Enlace caducado',
+        message: 'Este enlace de verificación no es válido o ha caducado. Pide que se reenvíe desde tu perfil en la app.'
+      }));
     }
 
     user.emailVerified = true;
@@ -89,9 +149,17 @@ exports.verifyEmail = async (req, res) => {
     user.emailVerificationExpires = null;
     await user.save();
 
-    res.send('¡Email verificado correctamente! Ya puedes volver a la app.');
+    res.send(verificationResultPage({
+      success: true,
+      title: '¡Email verificado!',
+      message: 'Tu cuenta de Deck Tracker ya está verificada. Ya puedes volver a la app.'
+    }));
   } catch (error) {
-    res.status(500).send('Error al verificar el email.');
+    res.status(500).send(verificationResultPage({
+      success: false,
+      title: 'Error',
+      message: 'No se ha podido verificar el email. Inténtalo de nuevo más tarde.'
+    }));
   }
 };
 
@@ -102,9 +170,18 @@ exports.resendVerification = async (req, res) => {
     if (!user.email) return res.status(400).json({ error: 'Tu cuenta no tiene un email asociado' });
     if (user.emailVerified) return res.status(400).json({ error: 'Tu email ya está verificado' });
 
+    if (user.emailVerificationLastSentAt) {
+      const msSinceLastSend = Date.now() - user.emailVerificationLastSentAt.getTime();
+      if (msSinceLastSend < RESEND_COOLDOWN_MS) {
+        const secondsLeft = Math.ceil((RESEND_COOLDOWN_MS - msSinceLastSend) / 1000);
+        return res.status(429).json({ error: `Espera ${secondsLeft}s antes de volver a pedir el correo`, secondsLeft });
+      }
+    }
+
     const verificationToken = crypto.randomBytes(32).toString('hex');
     user.emailVerificationToken = verificationToken;
     user.emailVerificationExpires = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+    user.emailVerificationLastSentAt = new Date();
     await user.save();
 
     await sendVerificationEmail(user.email, user.username, verificationToken);

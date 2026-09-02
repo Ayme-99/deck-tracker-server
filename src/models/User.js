@@ -36,6 +36,14 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Issue #268: cooldown para reenviar el correo de verificacion, para que
+  // no se puedan disparar decenas de correos seguidos a base de pulsar el
+  // boton repetidamente (el rate limit por IP de authLimiter no basta,
+  // permite hasta 10 en su ventana de 15 minutos).
+  emailVerificationLastSentAt: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
