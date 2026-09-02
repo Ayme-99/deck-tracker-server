@@ -16,6 +16,12 @@ const tournamentInviteRoutes = require('./routes/tournamentInviteRoutes');
 const app = express();
 connectDB();
 
+// Render (y la mayoria de PaaS) ponen la app detras de un proxy inverso,
+// que reenvia la IP real del cliente via X-Forwarded-For. Sin esto,
+// express-rate-limit no confia en esa cabecera y no puede identificar
+// bien a cada cliente para el limite de peticiones (ver auth routes).
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 
