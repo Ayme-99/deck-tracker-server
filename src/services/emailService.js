@@ -1,38 +1,29 @@
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 
-// Issue #268: envio de correos via Gmail SMTP (contraseña de aplicacion,
-// no la contraseña normal de la cuenta -- se genera en la configuracion
-// de seguridad de Google). Sin dominio propio, es la opcion mas simple de
-// montar: Resend/SendGrid exigen verificar un dominio para enviar a
-// destinatarios reales.
-let transporter = null;
+// Issue #268: envio de correos via SendGrid (API HTTP, puerto 443).
+// Render bloquea/restringe las conexiones SMTP salientes (probado con
+// Gmail SMTP: la conexion se quedaba colgada hasta dar timeout), asi que
+// hace falta un proveedor que envie via API en vez de SMTP puro.
+//
+// EMAIL_FROM debe ser una direccion verificada en SendGrid (Single Sender
+// Verification) -- sin dominio propio, es la unica forma de poder enviar
+// a cualquier destinatario real y no solo a la cuenta del propio remitente.
+let initialized = false;
 
-function getTransporter() {
-  if (transporter) return transporter;
-  transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD
-    },
-    // Sin esto, si el proveedor de hosting bloquea/restringe el puerto
-    // SMTP saliente, la conexion se queda colgada hasta el timeout por
-    // defecto de Node (varios minutos) en vez de fallar rapido con un
-    // error identificable en los logs.
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000
-  });
-  return transporter;
+function ensureInitialized() {
+  if (initialized) return;
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  initialized = true;
 }
 
 async function sendVerificationEmail(toEmail, username, token) {
+  ensureInitialized();
   const baseUrl = process.env.SERVER_BASE_URL || 'http://localhost:5000';
   const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${token}`;
 
-  await getTransporter().sendMail({
-    from: `"Deck Tracker" <${process.env.GMAIL_USER}>`,
+  await sgMail.send({
     to: toEmail,
+    from: process.env.EMAIL_FROM,
     subject: 'Verifica tu email en Deck Tracker',
     html: `
       <p>Hola ${username},</p>
