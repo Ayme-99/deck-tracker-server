@@ -12,6 +12,30 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Issue #268: email obligatorio desde el registro, verificado por correo.
+  // required solo se exige al crear cuentas nuevas via el controller (no
+  // aqui a nivel de schema) porque las cuentas ya existentes no tienen
+  // email todavia; sparse evita que colisionen como "null" duplicados en
+  // el indice unico mientras tanto.
+  email: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  emailVerificationToken: {
+    type: String,
+    default: null
+  },
+  emailVerificationExpires: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

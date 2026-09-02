@@ -7,5 +7,7 @@ const { authLimiter } = require('../middleware/rateLimitMiddleware');
 router.post('/register', authLimiter, authController.register);
 router.post('/login', authLimiter, authController.login);
 router.get('/me', protect, authController.getMe);
+router.get('/verify-email', authController.verifyEmail);
+router.post('/resend-verification', protect, authLimiter, authController.resendVerification);
 
 module.exports = router;
