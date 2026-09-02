@@ -192,6 +192,34 @@ exports.resendVerification = async (req, res) => {
   }
 };
 
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'La contraseña actual y la nueva son requeridas' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Contraseña actualizada' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
