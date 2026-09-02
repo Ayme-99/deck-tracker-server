@@ -110,6 +110,7 @@ exports.resendVerification = async (req, res) => {
     await sendVerificationEmail(user.email, user.username, verificationToken);
     res.json({ message: 'Correo de verificación reenviado' });
   } catch (error) {
+    console.error('Error al reenviar el correo de verificación:', error);
     res.status(500).json({ error: error.message });
   }
 };

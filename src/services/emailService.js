@@ -14,7 +14,14 @@ function getTransporter() {
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD
-    }
+    },
+    // Sin esto, si el proveedor de hosting bloquea/restringe el puerto
+    // SMTP saliente, la conexion se queda colgada hasta el timeout por
+    // defecto de Node (varios minutos) en vez de fallar rapido con un
+    // error identificable en los logs.
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
   return transporter;
 }
