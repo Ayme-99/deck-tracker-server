@@ -1,6 +1,6 @@
 # Deck Tracker – Backend
 
-API REST para gestión de mazos de Pokémon TCG, seguimiento de partidas con estadísticas agregadas, y torneos completos: tanto seguimiento del propio historial (**tracked**) como torneos alojados por la app con varios jugadores (**hosted**).
+API REST para gestión de mazos de Pokémon TCG, seguimiento de partidas con estadísticas agregadas, torneos completos (tanto seguimiento del propio historial -**tracked**- como torneos alojados por la app con varios jugadores -**hosted**-), y sistema de amigos con invitaciones a torneos.
 
 ## Stack
 
@@ -24,8 +24,10 @@ src/
 │ ├── Match.js
 │ ├── OpponentArchetype.js
 │ ├── Tournament.js
-│ ├── TournamentPlayer.js # modo hosted: inscripcion de jugador (sin cuenta propia)
+│ ├── TournamentPlayer.js # modo hosted: inscripcion de jugador; linkedUserId + role (admin/guest) si esta vinculado a una cuenta amiga
 │ ├── TournamentMatch.js # modo hosted: partida entre dos TournamentPlayer
+│ ├── TournamentInvite.js # invitacion pendiente a un torneo hosted propio
+│ ├── FriendRequest.js # relacion de amistad entre dos cuentas (pending/accepted/rejected/blocked)
 │ └── User.js
 ├── controllers/
 │ ├── authController.js
@@ -34,7 +36,16 @@ src/
 │ ├── opponentArchetypeController.js
 │ ├── pokemonController.js
 │ ├── statsController.js
-│ └── tournamentController.js # tracked + hosted (creacion, jugadores, pairings, standings, export/import)
+│ ├── friendController.js # amigos: buscar, solicitar, aceptar/rechazar, listar, eliminar, bloquear
+│ ├── tournamentInviteController.js # invitar a un amigo a un torneo hosted propio
+│ └── tournament/ # torneos, dividido por responsabilidad
+│   ├── tournamentCrudController.js # crear/editar/eliminar, resumen, standing manual
+│   ├── tournamentPlayerController.js # gestion de jugadores (modo hosted)
+│   ├── tournamentSwissController.js # rondas suizas
+│   ├── tournamentEliminationController.js # bracket, avance de fase, entrada desde suiza/grupos
+│   ├── tournamentGroupsLeagueController.js # grupos y liga
+│   ├── tournamentResultsController.js # resultados de partidas hosted, clasificacion
+│   └── tournamentTransferController.js # exportar/importar
 ├── routes/
 │ ├── authRoutes.js
 │ ├── deckRoutes.js
@@ -42,23 +53,26 @@ src/
 │ ├── opponentArchetypeRoutes.js
 │ ├── pokemonRoutes.js
 │ ├── statsRoutes.js
-│ └── tournamentRoutes.js
+│ ├── tournamentRoutes.js
+│ ├── friendRoutes.js
+│ └── tournamentInviteRoutes.js
 ├── services/
 │ ├── pokeapiService.js
 │ ├── swissPairingService.js # logica pura de emparejamiento suizo
 │ ├── eliminationPairingService.js # logica pura de bracket (seeding, fases, byes)
 │ ├── groupsEliminationService.js # reparto en grupos + entrada a eliminatoria
 │ ├── roundRobinService.js # calendario todos-contra-todos (grupos y liga)
-│ └── tiebreakerService.js # calculo de OMW%
-└── middleware/
-├── authMiddleware.js
-└── rateLimitMiddleware.js
+│ ├── tiebreakerService.js # calculo de OMW%
+│ └── tournamentAccessService.js # permisos de lectura compartida (dueño + jugador invitado vinculado)
+├── middleware/
+│ ├── authMiddleware.js
+│ └── rateLimitMiddleware.js
 ├── scripts/
 │ └── cleanupOrphanMatches.js # one-off: limpieza de partidas huérfanas (issue #31)
-├── tests/
-├── models/
-├── services/
-└── controllers/
+└── tests/
+  ├── models/
+  ├── services/
+  └── controllers/
 ```
 
 ## Variables de entorno
@@ -88,9 +102,12 @@ npm test
 ### Auth (`/api/auth`)
 | Método | Ruta | Descripción | Auth |
 |---|---|---|---|
-| POST | `/register` | Crea usuario, devuelve token | No |
+| POST | `/register` | Crea usuario (requiere `username`, `password`, `email`), devuelve token. Envía un correo de verificación (best-effort: si el envío falla, la cuenta se crea igualmente) | No |
 | POST | `/login` | Login, devuelve token | No |
 | GET | `/me` | Datos del usuario autenticado | Sí |
+| GET | `/verify-email?token=` | Verifica el email a partir del enlace del correo (página HTML de resultado, pensada para abrirse desde el navegador) | No |
+| POST | `/resend-verification` | Reenvía el correo de verificación (cooldown de 60s entre reenvíos) | Sí |
+| POST | `/change-password` | Cambia la contraseña, requiere `currentPassword` y `newPassword` | Sí |
 
 ### Decks (`/api/decks`) — todas requieren auth
 | Método | Ruta | Descripción |
@@ -147,12 +164,37 @@ Arquetipos de mazos rivales, con sus sprites asociados.
 | GET | `/by-name?name=` | Busca un arquetipo por nombre |
 | POST | `/` | Crea o actualiza un arquetipo (upsert) |
 
+### Amigos (`/api/friends`) — todas requieren auth
+Una sola relación por par de usuarios (`FriendRequest`), con estado `pending` / `accepted` / `rejected` / `blocked`.
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/search?q=` | Busca usuarios por username (solo expone el username, nada más de la cuenta) |
+| GET | `/requests?type=incoming\|outgoing` | Lista solicitudes pendientes, entrantes o salientes |
+| POST | `/requests` | Envía una solicitud de amistad, por `username`. Si había una solicitud rechazada previa, se reutiliza (vuelve a quedar pendiente) |
+| POST | `/requests/:id/accept` | Acepta una solicitud entrante |
+| POST | `/requests/:id/reject` | Rechaza una solicitud entrante |
+| GET | `/` | Lista los amigos actuales (relaciones aceptadas) |
+| DELETE | `/:friendId` | Elimina una amistad ya aceptada |
+| GET | `/:friendId/decks` | Lista los mazos de un amigo (solo si la amistad está aceptada) |
+| POST | `/:userId/block` | Bloquea a un usuario (impide nuevas solicitudes en cualquier dirección) |
+| DELETE | `/:userId/block` | Desbloquea; solo puede hacerlo quien bloqueó |
+
+### Invitaciones a torneo (`/api/tournament-invites`) — todas requieren auth
+Invitar a un amigo a un torneo hosted propio (requiere amistad aceptada, ver arriba). Al aceptar, crea el `TournamentPlayer` vinculado a la cuenta (`linkedUserId` + `role`).
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/` | Lista las invitaciones pendientes recibidas |
+| POST | `/:id/accept` | Acepta una invitación |
+| POST | `/:id/reject` | Rechaza una invitación |
+
+Enviar la invitación se hace desde el propio torneo: `POST /api/tournaments/:id/invites` con `userId` y `role` (`admin` o `guest`) — ver más abajo.
+
 ### Torneos (`/api/tournaments`) — todas requieren auth
 
 Dos modos, distinguidos por el campo `mode`:
 
 - **`tracked`**: registro del propio historial dentro de un torneo externo (no organizado por la app).
-- **`hosted`**: la app aloja el torneo completo, con varios jugadores (sin cuenta propia) y emparejamientos automáticos.
+- **`hosted`**: la app aloja el torneo completo, con varios jugadores (con o sin cuenta propia) y emparejamientos automáticos.
 
 Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_elimination`, `groups_elimination`, `elimination`, `league`.
 
@@ -167,13 +209,16 @@ Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_eliminatio
 | GET | `/:id/summary` | Resumen W-L-T global y desglosado por fase (solo `tracked`) |
 | POST | `/:id/standing` | Añade un snapshot manual de puntos/posición. Solo válido si `structure` es `league` (modo `tracked`) |
 
-#### Modo `hosted` — jugadores
+#### Modo `hosted` — jugadores e invitaciones
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/:id/players` | Crea una inscripción (jugador). `isOrganizer: true` requiere `deckId` (tu mazo real, si participas tú) |
-| GET | `/:id/players` | Lista los jugadores del torneo |
+| GET | `/:id/players` | Lista los jugadores del torneo (documento completo, incluye `linkedUserId`/`role` si el jugador está vinculado a una cuenta) |
 | PUT | `/:id/players/:playerId` | Edita un jugador (nombre, `dropped`, etc.) |
 | DELETE | `/:id/players/:playerId` | Elimina un jugador (sin cascada sobre sus partidas) |
+| POST | `/:id/invites` | Invita a un amigo (`userId`, `role`: `admin`/`guest`) a unirse como jugador vinculado a su cuenta |
+
+> **Permisos (issue server#102):** un torneo solo era visible para su dueño. Ahora, un jugador invitado y vinculado (`TournamentPlayer.linkedUserId`) también puede leerlo: aparece en su propio `GET /` (listado), y puede consultar `GET /:id`, `GET /:id/players`, `GET /:id/hosted-matches` y `GET /:id/hosted-standings` de ese torneo — pero editarlo, gestionar jugadores o registrar resultados de otros sigue exigiendo ser el dueño.
 
 #### Modo `hosted` — rondas y emparejamientos
 | Método | Ruta | Descripción |
@@ -183,10 +228,11 @@ Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_eliminatio
 | POST | `/:id/advance-bracket` | Avanza el bracket a la fase siguiente, emparejando ganadores. Resuelve ida/vuelta (agregado de premios) y muerte súbita |
 | POST | `/:id/assign-groups` | Reparte los jugadores en grupos (`groupSize`) |
 | POST | `/:id/group-stage-rounds` | Genera el calendario todos-contra-todos de cada grupo |
+| POST | `/:id/groups-elimination-entry` | Calcula la entrada a eliminatoria tras la fase de grupos |
 | POST | `/:id/league-rounds` | Genera el calendario de liga (ida, o ida y vuelta si `leagueDoubleRound`) |
 | POST | `/:id/close-phase` | Cierra la fase suiza (`topCut`) o de grupos (`qualifiersPerGroup`) y calcula la entrada a eliminatoria (byes + ronda previa si el nº de clasificados no es potencia de 2) |
 | POST | `/:id/resolve-preliminary-entry` | Resuelve la entrada a la fase destino tras completar la ronda previa reducida |
-| PUT | `/:id/hosted-matches/:matchId/result` | Registra el resultado de una partida. Si el jugador es `isOrganizer`, genera automáticamente un `Match` normal vinculado a su `deckId`, para que cuente en sus stats |
+| PUT | `/:id/hosted-matches/:matchId/result` | Registra el resultado de una partida. Si el jugador es `isOrganizer` (o tiene cuenta vinculada), genera automáticamente un `Match` normal vinculado a su `deckId`, para que cuente en sus stats |
 | GET | `/:id/hosted-matches` | Lista todas las partidas del torneo |
 | GET | `/:id/hosted-standings` | Clasificación: puntos, W-L-D, y desempates (diferencial de premios, luego OMW%) |
 
