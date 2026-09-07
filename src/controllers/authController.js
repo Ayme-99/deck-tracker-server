@@ -220,6 +220,41 @@ exports.changePassword = async (req, res) => {
   }
 };
 
+// Issue #270: cambiar nombre de usuario desde el perfil.
+exports.changeUsername = async (req, res) => {
+  try {
+    const { username } = req.body;
+
+    if (!username || !username.trim()) {
+      return res.status(400).json({ error: 'El nombre de usuario es requerido' });
+    }
+
+    const trimmed = username.trim();
+
+    if (trimmed.length < 3 || trimmed.length > 20) {
+      return res.status(400).json({ error: 'El nombre de usuario debe tener entre 3 y 20 caracteres' });
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+      return res.status(400).json({ error: 'El nombre de usuario solo puede contener letras, números y guiones bajos' });
+    }
+
+    const existingUser = await User.findOne({ username: trimmed, _id: { $ne: req.userId } });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Ese nombre de usuario ya existe' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    user.username = trimmed;
+    await user.save();
+
+    res.json({ username: user.username });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
