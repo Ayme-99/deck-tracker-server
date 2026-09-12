@@ -287,6 +287,59 @@ exports.changeAvatar = async (req, res) => {
   }
 };
 
+// Issue #274: cambiar (o añadir por primera vez) el email de la cuenta.
+// Mismo endpoint sirve para ambos casos -- para una cuenta sin email
+// (anteriores a la #268), "cambiar" es simplemente "añadir". Al cambiar,
+// el nuevo email queda sin verificar y se reenvia el correo de
+// verificacion, igual que en el registro.
+exports.changeEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'El email es requerido' });
+    }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'El email no es válido' });
+    }
+
+    const normalized = email.trim().toLowerCase();
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    if (user.email === normalized) {
+      return res.status(400).json({ error: 'Ese ya es tu email actual' });
+    }
+
+    const existingEmail = await User.findOne({ email: normalized, _id: { $ne: req.userId } });
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Ese email ya está en uso' });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.email = normalized;
+    user.emailVerified = false;
+    user.emailVerificationToken = verificationToken;
+    user.emailVerificationExpires = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+    user.emailVerificationLastSentAt = new Date();
+    await user.save();
+
+    // Best-effort, igual que en register: si el envio falla, el email ya
+    // ha quedado guardado -- el usuario puede pedir un reenvio desde el
+    // perfil (resendVerification), que ya existe.
+    try {
+      await sendVerificationEmail(user.email, user.username, verificationToken);
+    } catch (emailError) {
+      console.error('Error al enviar el correo de verificación:', emailError.message);
+    }
+
+    res.json({ email: user.email, emailVerified: user.emailVerified });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
