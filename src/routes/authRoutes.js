@@ -11,5 +11,6 @@ router.get('/verify-email', authController.verifyEmail);
 router.post('/resend-verification', protect, authLimiter, authController.resendVerification);
 router.post('/change-password', protect, authLimiter, authController.changePassword);
 router.post('/change-username', protect, authLimiter, authController.changeUsername);
+router.post('/change-avatar', protect, authLimiter, authController.changeAvatar);
 
 module.exports = router;

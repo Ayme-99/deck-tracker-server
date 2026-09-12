@@ -44,6 +44,13 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Issue #269: foto de perfil, guardada como data URI base64 directamente
+  // en el documento (sin servicio externo de almacenamiento). El limite de
+  // tamano se valida en el controller, no aqui.
+  avatarBase64: {
+    type: String,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

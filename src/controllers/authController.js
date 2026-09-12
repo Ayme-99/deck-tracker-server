@@ -255,6 +255,38 @@ exports.changeUsername = async (req, res) => {
   }
 };
 
+// Issue #269: cambiar foto de perfil. Se guarda como data URI base64
+// directamente en el documento de usuario (sin servicio externo de
+// almacenamiento) -- el limite de tamano del body para esta ruta concreta
+// se sube en app.js (express.json({ limit: '2mb' })).
+const MAX_AVATAR_BASE64_LENGTH = 700_000; // ~500KB decodificado, con margen para el overhead de base64
+
+exports.changeAvatar = async (req, res) => {
+  try {
+    const { avatarBase64 } = req.body;
+
+    if (!avatarBase64) {
+      return res.status(400).json({ error: 'La imagen es requerida' });
+    }
+    if (!/^data:image\/(png|jpe?g|webp);base64,/.test(avatarBase64)) {
+      return res.status(400).json({ error: 'Formato de imagen no válido' });
+    }
+    if (avatarBase64.length > MAX_AVATAR_BASE64_LENGTH) {
+      return res.status(400).json({ error: 'La imagen es demasiado grande' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    user.avatarBase64 = avatarBase64;
+    await user.save();
+
+    res.json({ avatarBase64: user.avatarBase64 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
