@@ -23,11 +23,13 @@ connectDB();
 app.set('trust proxy', 1);
 
 app.use(cors());
-app.use(express.json());
 // Issue #269: el limite por defecto (100kb) de express.json() no basta
-// para el avatar en base64. Se sube el limite solo en esta ruta concreta,
-// no globalmente, para no dar pie a bodies enormes en el resto de la API.
+// para el avatar en base64. Este middleware especifico para la ruta del
+// avatar tiene que ir ANTES del express.json() global -- si no, el global
+// (sin path, coincide con toda peticion) intercepta el body primero con su
+// limite de 100kb y devuelve 413 antes de que este llegue a aplicarse.
 app.use('/api/auth/change-avatar', express.json({ limit: '2mb' }));
+app.use(express.json());
 
 app.use('/api/decks', deckRoutes);
 app.use('/api/matches', matchRoutes);
