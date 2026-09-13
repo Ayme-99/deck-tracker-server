@@ -349,26 +349,34 @@ exports.changeEmail = async (req, res) => {
 };
 
 // Issue #275: eliminar cuenta. Requiere confirmar la contraseña actual
-// (accion irreversible, mismo criterio que changePassword).
+// (accion irreversible, mismo criterio que changePassword). Devuelve 403
+// (no 401) si la contraseña no coincide -- un 401 aqui haria que el
+// cliente lo interprete como sesion JWT caducada y cierre sesion aunque
+// el token siga siendo valido (ver ApiService._handleResponse).
 //
 // Orden de borrado -- de las hojas hacia la raiz, para no dejar referencias
 // colgando a mitad de proceso si algo fallase:
 //   1. De los torneos PROPIOS: TournamentMatch, TournamentPlayer,
 //      TournamentInvite (todos referencian tournamentId)
-//   2. Torneos propios
-//   3. Partidas sueltas propias (Match)
-//   4. Mazos propios (Deck)
-//   5. Rivales propios (OpponentArchetype)
-//   6. Relaciones de amistad/bloqueo propias (FriendRequest, como
+//   2. Match de OTROS usuarios (participantes vinculados via #94) que
+//      apuntaban a estos torneos propios: se desvinculan (tournamentId/
+//      phase/round a null), no se borran -- sus partidas siguen contando
+//      en sus stats, solo dejan de estar agrupadas bajo un torneo que va
+//      a desaparecer
+//   3. Torneos propios
+//   4. Partidas sueltas propias (Match)
+//   5. Mazos propios (Deck)
+//   6. Rivales propios (OpponentArchetype)
+//   7. Relaciones de amistad/bloqueo propias (FriendRequest, como
 //      requester o recipient)
-//   7. Invitaciones a torneos AJENOS donde participaba (inviterUserId o
+//   8. Invitaciones a torneos AJENOS donde participaba (inviterUserId o
 //      inviteeUserId) -- no confundir con las del paso 1, que son de sus
 //      propios torneos
-//   8. Desvincular (NO borrar) los TournamentPlayer de torneos ajenos
+//   9. Desvincular (NO borrar) los TournamentPlayer de torneos ajenos
 //      donde estuviera vinculado (linkedUserId) -- el torneo del amigo
 //      sigue existiendo, solo se pierde la vinculacion a esta cuenta ya
 //      borrada; el nombre y el historico de resultados se conservan
-//   9. El propio User
+//   10. El propio User
 exports.deleteAccount = async (req, res) => {
   try {
     const { password } = req.body;
@@ -392,6 +400,16 @@ exports.deleteAccount = async (req, res) => {
       await TournamentMatch.deleteMany({ tournamentId: { $in: ownTournamentIds } });
       await TournamentPlayer.deleteMany({ tournamentId: { $in: ownTournamentIds } });
       await TournamentInvite.deleteMany({ tournamentId: { $in: ownTournamentIds } });
+      // Los Match de OTROS usuarios (participantes vinculados via #94) que
+      // apunten a estos torneos quedarian con un tournamentId inexistente.
+      // Se desvincula el registro (no se borra): la partida sigue contando
+      // en las stats de esa persona, solo deja de estar agrupada bajo un
+      // torneo que ya no existe. Los Match del propio usuario que se borra
+      // no hace falta tocarlos aqui, se eliminan igualmente mas abajo.
+      await Match.updateMany(
+        { tournamentId: { $in: ownTournamentIds }, userId: { $ne: req.userId } },
+        { $set: { tournamentId: null, phase: null, round: null } }
+      );
       await Tournament.deleteMany({ _id: { $in: ownTournamentIds } });
     }
 
