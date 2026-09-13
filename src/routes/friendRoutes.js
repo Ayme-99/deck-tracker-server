@@ -11,6 +11,8 @@ router.post('/requests', controller.sendRequest);
 router.post('/requests/:id/accept', controller.acceptRequest);
 router.post('/requests/:id/reject', controller.rejectRequest);
 
+router.get('/blocked', controller.listBlocked);
+
 router.get('/', controller.listFriends);
 router.delete('/:friendId', controller.removeFriend);
 router.get('/:friendId/decks', controller.listFriendDecks);

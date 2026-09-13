@@ -261,3 +261,25 @@ exports.unblockUser = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Lista los usuarios que este usuario ha bloqueado (issue #281). Solo los
+// bloqueos hechos por el propio usuario -- si alguien te bloqueo a ti, no
+// aparece aqui (no tiene sentido "desbloquear" algo que no decidiste tu).
+exports.listBlocked = async (req, res) => {
+  try {
+    const relations = await FriendRequest.find({
+      status: 'blocked',
+      blockedBy: req.userId
+    })
+      .populate('requester', 'username')
+      .populate('recipient', 'username');
+
+    const blockedUsers = relations.map((r) =>
+      r.requester._id.toString() === req.userId ? r.recipient : r.requester
+    );
+
+    res.json(blockedUsers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
