@@ -1,6 +1,14 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
+const Deck = require('../models/Deck');
+const Match = require('../models/Match');
+const Tournament = require('../models/Tournament');
+const TournamentPlayer = require('../models/TournamentPlayer');
+const TournamentMatch = require('../models/TournamentMatch');
+const TournamentInvite = require('../models/TournamentInvite');
+const OpponentArchetype = require('../models/OpponentArchetype');
+const FriendRequest = require('../models/FriendRequest');
 const { sendVerificationEmail } = require('../services/emailService');
 
 // Issue #268: 24h de margen para que el enlace de verificacion no caduque
@@ -335,6 +343,74 @@ exports.changeEmail = async (req, res) => {
     }
 
     res.json({ email: user.email, emailVerified: user.emailVerified });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Issue #275: eliminar cuenta. Requiere confirmar la contraseña actual
+// (accion irreversible, mismo criterio que changePassword).
+//
+// Orden de borrado -- de las hojas hacia la raiz, para no dejar referencias
+// colgando a mitad de proceso si algo fallase:
+//   1. De los torneos PROPIOS: TournamentMatch, TournamentPlayer,
+//      TournamentInvite (todos referencian tournamentId)
+//   2. Torneos propios
+//   3. Partidas sueltas propias (Match)
+//   4. Mazos propios (Deck)
+//   5. Rivales propios (OpponentArchetype)
+//   6. Relaciones de amistad/bloqueo propias (FriendRequest, como
+//      requester o recipient)
+//   7. Invitaciones a torneos AJENOS donde participaba (inviterUserId o
+//      inviteeUserId) -- no confundir con las del paso 1, que son de sus
+//      propios torneos
+//   8. Desvincular (NO borrar) los TournamentPlayer de torneos ajenos
+//      donde estuviera vinculado (linkedUserId) -- el torneo del amigo
+//      sigue existiendo, solo se pierde la vinculacion a esta cuenta ya
+//      borrada; el nombre y el historico de resultados se conservan
+//   9. El propio User
+exports.deleteAccount = async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ error: 'Introduce tu contraseña para confirmar' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'La contraseña no es correcta' });
+    }
+
+    const ownTournaments = await Tournament.find({ userId: req.userId }).select('_id');
+    const ownTournamentIds = ownTournaments.map((t) => t._id);
+
+    if (ownTournamentIds.length > 0) {
+      await TournamentMatch.deleteMany({ tournamentId: { $in: ownTournamentIds } });
+      await TournamentPlayer.deleteMany({ tournamentId: { $in: ownTournamentIds } });
+      await TournamentInvite.deleteMany({ tournamentId: { $in: ownTournamentIds } });
+      await Tournament.deleteMany({ _id: { $in: ownTournamentIds } });
+    }
+
+    await Match.deleteMany({ userId: req.userId });
+    await Deck.deleteMany({ userId: req.userId });
+    await OpponentArchetype.deleteMany({ userId: req.userId });
+    await FriendRequest.deleteMany({ $or: [{ requester: req.userId }, { recipient: req.userId }] });
+    await TournamentInvite.deleteMany({ $or: [{ inviterUserId: req.userId }, { inviteeUserId: req.userId }] });
+
+    // Desvinculacion, no borrado: el TournamentPlayer pertenece al torneo
+    // de otro usuario, que debe seguir existiendo con su historico intacto.
+    await TournamentPlayer.updateMany(
+      { linkedUserId: req.userId },
+      { $set: { linkedUserId: null, deckId: null, role: null } }
+    );
+
+    await User.findByIdAndDelete(req.userId);
+
+    res.json({ message: 'Cuenta eliminada correctamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

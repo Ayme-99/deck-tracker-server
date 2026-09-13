@@ -13,5 +13,6 @@ router.post('/change-password', protect, authLimiter, authController.changePassw
 router.post('/change-username', protect, authLimiter, authController.changeUsername);
 router.post('/change-avatar', protect, authLimiter, authController.changeAvatar);
 router.post('/change-email', protect, authLimiter, authController.changeEmail);
+router.post('/delete-account', protect, authLimiter, authController.deleteAccount);
 
 module.exports = router;
