@@ -216,7 +216,7 @@ exports.changePassword = async (req, res) => {
 
     const isMatch = await user.comparePassword(currentPassword);
     if (!isMatch) {
-      return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+      return res.status(403).json({ error: 'La contraseña actual no es correcta' });
     }
 
     user.password = newPassword;
@@ -382,7 +382,7 @@ exports.deleteAccount = async (req, res) => {
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ error: 'La contraseña no es correcta' });
+      return res.status(403).json({ error: 'La contraseña no es correcta' });
     }
 
     const ownTournaments = await Tournament.find({ userId: req.userId }).select('_id');
