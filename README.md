@@ -108,6 +108,10 @@ npm test
 | GET | `/verify-email?token=` | Verifica el email a partir del enlace del correo (página HTML de resultado, pensada para abrirse desde el navegador) | No |
 | POST | `/resend-verification` | Reenvía el correo de verificación (cooldown de 60s entre reenvíos) | Sí |
 | POST | `/change-password` | Cambia la contraseña, requiere `currentPassword` y `newPassword` | Sí |
+| POST | `/change-username` | Cambia el nombre de usuario (`username`, 3-20 caracteres, letras/números/`_`) | Sí |
+| POST | `/change-avatar` | Sube/cambia la foto de perfil (`avatarBase64`, data URI `image/png\|jpeg\|webp`, límite 2MB — ruta con su propio `express.json({ limit: '2mb' })`, el resto de la API se queda en el límite por defecto) | Sí |
+| POST | `/change-email` | Añade o cambia el email de la cuenta (`email`). Mismo endpoint para ambos casos — útil para cuentas anteriores a la #268 que aún no tenían email. Queda sin verificar y se reenvía el correo de verificación | Sí |
+| POST | `/delete-account` | Elimina la cuenta (requiere `password` de confirmación). Borra en cascada sus torneos propios (jugadores, partidas e invitaciones) y sus propias partidas/mazos; en torneos propios con participantes de otras cuentas, desvincula (no borra) sus partidas para no perder su historial | Sí |
 
 ### Decks (`/api/decks`) — todas requieren auth
 | Método | Ruta | Descripción |
@@ -176,6 +180,7 @@ Una sola relación por par de usuarios (`FriendRequest`), con estado `pending` /
 | GET | `/` | Lista los amigos actuales (relaciones aceptadas) |
 | DELETE | `/:friendId` | Elimina una amistad ya aceptada |
 | GET | `/:friendId/decks` | Lista los mazos de un amigo (solo si la amistad está aceptada) |
+| GET | `/blocked` | Lista los usuarios que has bloqueado |
 | POST | `/:userId/block` | Bloquea a un usuario (impide nuevas solicitudes en cualquier dirección) |
 | DELETE | `/:userId/block` | Desbloquea; solo puede hacerlo quien bloqueó |
 
