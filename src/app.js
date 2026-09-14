@@ -31,6 +31,8 @@ app.use(cors());
 app.use('/api/auth/change-avatar', express.json({ limit: '2mb' }));
 app.use(express.json());
 
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
 app.use('/api/decks', deckRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/auth', authRoutes);
