@@ -1,0 +1,20 @@
+name: Keep Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /health
+        run: |
+          curl --fail --silent --show-error \
+            --max-time 90 \
+            --retry 3 --retry-delay 10 --retry-all-errors \
+            https://deck-tracker-server.onrender.com/health
