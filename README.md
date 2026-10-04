@@ -99,6 +99,12 @@ npm test
 
 ## Endpoints
 
+### Health (`/health`)
+Fuera del prefijo `/api`. Sin autenticación y sin acceso a la base de datos; se usa para el keep-alive (ver [Deploy](#deploy)).
+| Método | Ruta | Descripción | Auth |
+|---|---|---|---|
+| GET | `/health` | Devuelve `{ "status": "ok" }` | No |
+
 ### Auth (`/api/auth`)
 | Método | Ruta | Descripción | Auth |
 |---|---|---|---|
@@ -265,3 +271,17 @@ Authorization: Bearer <token>
 ## Deploy
 
 Conectado a Render con auto-deploy en cada push a `main`. Variables de entorno configuradas en el dashboard de Render (Environment).
+
+### Keep-alive (evitar que el servidor se duerma)
+
+El plan gratuito de Render duerme el servicio tras 15 minutos sin tráfico entrante, y el siguiente arranque en frío tarda alrededor de un minuto (durante ese tiempo responde `503`). Para evitarlo, el servidor expone `GET /health` (responde `{ "status": "ok" }`, sin autenticación ni acceso a la base de datos) y hay dos pings independientes que lo llaman:
+
+| Ping | Dónde se configura | Frecuencia |
+| --- | --- | --- |
+| Monitor HTTP externo (plan gratuito) | Panel del servicio de monitorización, fuera de este repo | Cada 5 minutos |
+| Workflow de GitHub Actions `.github/workflows/keep-alive.yml` | Este repo | Cada ~10 minutos (`schedule`) y manual (`workflow_dispatch`) |
+
+- El monitor externo es el ping principal. Tiene avisos por email por si el servidor devuelve `503` o deja de responder.
+- El workflow de GitHub es un respaldo: GitHub puede retrasar o saltarse ejecuciones programadas, y las desactiva tras 60 días sin actividad en el repo. Si el servidor vuelve a dormirse, comprobar en la pestaña Actions que sigue activo y que aparecen ejecuciones con el evento `schedule`.
+- El plan gratuito de Render incluye 750 horas de instancia al mes por workspace. Un solo servicio siempre despierto gasta unas 720, así que no conviene añadir un segundo Web Service gratuito en el mismo workspace. La web (`deck-tracker-web`) es un Static Site y no consume horas.
+- Para probar el endpoint a mano: `curl https://deck-tracker-server.onrender.com/health`.
