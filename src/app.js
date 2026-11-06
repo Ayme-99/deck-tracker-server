@@ -12,6 +12,7 @@ const tournamentRoutes = require('./routes/tournamentRoutes');
 const cardCatalogRoutes = require('./routes/cardCatalogRoutes');
 const friendRoutes = require('./routes/friendRoutes');
 const tournamentInviteRoutes = require('./routes/tournamentInviteRoutes');
+const montarIncursiones = require('./incursiones/montar');
 
 const app = express();
 connectDB();
@@ -29,6 +30,10 @@ app.use(cors());
 // (sin path, coincide con toda peticion) intercepta el body primero con su
 // limite de 100kb y devuelve 413 antes de que este llegue a aplicarse.
 app.use('/api/auth/change-avatar', express.json({ limit: '2mb' }));
+// Incursiones: un registro de partida lleva todos los eventos y puede pasar
+// de 100kb. Igual que con el avatar, este limite tiene que ir ANTES del
+// express.json() global.
+app.use('/api/incursiones', express.json({ limit: '1mb' }));
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -43,6 +48,7 @@ app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/cards', cardCatalogRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/tournament-invites', tournamentInviteRoutes);
+app.use('/api/incursiones', montarIncursiones());
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
