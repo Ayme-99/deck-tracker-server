@@ -255,6 +255,24 @@ Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_eliminatio
 
 > Diseño completo del modo hosted: ver [`TORNEOS_HOSTED_GDD.md`](./TORNEOS_HOSTED_GDD.md) — bracket de eliminatoria soportado hasta 64 jugadores en la primera ronda (issue #67).
 
+## Incursiones (`/api/incursiones`)
+
+Backend del Game Master de Incursiones (repo [TCG-Raid-Battles](https://github.com/Ayme-99/TCG-Raid-Battles)). Reutiliza las cuentas, el JWT y la base de este servidor; no hay servicio aparte.
+
+- `src/incursiones/` es el módulo **tal como sale del otro repo**: no se edita aquí (ver `ORIGEN.md`). Se actualiza con `node server/scripts/exportar.js <este repo>/src/incursiones` desde TCG-Raid-Battles.
+- `src/incursiones/montar.js` es lo único propio de Deck Tracker: usa `protect` (el id sale de `req.userId`), comprueba las cuentas contra el modelo `User` y crea el repositorio de MongoDB, con sus índices, en la primera petición.
+- Colecciones nuevas: `incursiones_partidas` e `incursiones_partida_jugadores`.
+- El cuerpo de estas rutas admite hasta 1 MB (un registro de partida lleva todos los eventos).
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /api/incursiones/partidas` | Guarda una partida terminada (idempotente por `partidaId`) y abona los puntos |
+| `GET /api/incursiones/partidas` | Historial de la cuenta, paginado |
+| `GET /api/incursiones/partidas/:id` | Registro completo (solo para quien jugó) |
+| `GET /api/incursiones/me/puntos` | Puntos acumulados y lo que falta para desbloquear jefes |
+
+Todas requieren `Authorization: Bearer <token>`. Detalle de errores y validaciones: `server/README.md` en TCG-Raid-Battles.
+
 ## Autenticación
 
 Todas las rutas protegidas requieren el header:
