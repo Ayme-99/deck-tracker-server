@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const montarIncursiones = require('../../src/incursiones/montar');
 const { crearRepoMemoria } = require('../../src/incursiones');
 const ejemplo = require('./partida-v2.json');
+const ejemploV3 = require('./partida-v3.json');
 
 // El mismo JWT que usa el resto del servidor (middleware `protect`).
 const SECRETO = 'secreto-de-prueba';
@@ -65,6 +66,31 @@ describe('Incursiones montado en Deck Tracker', () => {
     expect(puntos.estado).toBe(200);
     expect(puntos.json.partidas).toBe(1);
     expect(puntos.json.puntos).toBe(guardada.json.tusPuntos);
+  });
+
+  test('guarda una partida v3 con un aliado por categoría (D-13)', async () => {
+    const usuario = '64b000000000000000000002';
+    const partida = { ...structuredClone(ejemploV3), cuentas: [usuario, ...ejemploV3.cuentas.slice(1)] };
+    const guardada = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(guardada.estado).toBe(201);
+
+    const detalle = await llamar('GET', `/partidas/${partida.partidaId}`, { usuario });
+    expect(detalle.json.registro.version).toBe(3);
+    const aliado = detalle.json.registro.eventos.find((e) => e.tipo === 'aliadoInvocado');
+    expect(aliado.categoria).toBe('danio');
+  });
+
+  test('rechaza un aliado v3 sin categoría', async () => {
+    const usuario = '64b000000000000000000003';
+    const partida = {
+      ...structuredClone(ejemploV3),
+      partidaId: 'v3-sin-categoria',
+      cuentas: [usuario, ...ejemploV3.cuentas.slice(1)],
+    };
+    delete partida.eventos.find((e) => e.tipo === 'aliadoInvocado').categoria;
+    const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(r.estado).toBe(400);
+    expect(r.json.error).toBe('estructura_invalida');
   });
 
   test('una cuenta que no juega la partida recibe 403', async () => {

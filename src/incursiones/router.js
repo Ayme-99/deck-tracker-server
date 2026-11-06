@@ -1,6 +1,12 @@
 'use strict';
 const express = require('express');
 const { crearValidador, VERSIONES_SOPORTADAS } = require('./esquema');
+
+// [1, 2, 3] → «1, 2 y 3»
+function listaDeVersiones(versiones) {
+  if (versiones.length < 2) return versiones.join('');
+  return `${versiones.slice(0, -1).join(', ')} y ${versiones[versiones.length - 1]}`;
+}
 const { comprobarCoherencia, abonos } = require('./coherencia');
 const { COSTE_DESBLOQUEO } = require('./puntos');
 
@@ -99,7 +105,7 @@ function crearRouter({
     }
     if (!VERSIONES_SOPORTADAS.includes(registro.version)) {
       return error(res, 400, 'version_no_soportada',
-        `este servidor entiende las versiones ${VERSIONES_SOPORTADAS.join(' y ')} del registro`,
+        `este servidor entiende las versiones ${listaDeVersiones(VERSIONES_SOPORTADAS)} del registro`,
         { version: registro.version ?? null });
     }
     const errores = validar(registro);
