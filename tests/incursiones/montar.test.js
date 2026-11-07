@@ -5,6 +5,7 @@ const { crearRepoMemoria } = require('../../src/incursiones');
 const ejemplo = require('./partida-v2.json');
 const ejemploV3 = require('./partida-v3.json');
 const ejemploV4 = require('./partida-v4.json');
+const ejemploV5 = require('./partida-v5.json');
 
 // El mismo JWT que usa el resto del servidor (middleware `protect`).
 const SECRETO = 'secreto-de-prueba';
@@ -112,6 +113,28 @@ describe('Incursiones montado en Deck Tracker', () => {
       cuentas: [usuario, ...ejemploV4.cuentas.slice(1)],
     };
     partida.eventos.find((e) => e.tipo === 'aliadoInvocado').categoria = 'barrera';
+    const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(r.estado).toBe(400);
+  });
+
+  test('guarda una partida v5 con un efecto en un ataque del jefe', async () => {
+    const usuario = '64b000000000000000000006';
+    const partida = { ...structuredClone(ejemploV5), cuentas: [usuario, ...ejemploV5.cuentas.slice(1)] };
+    const guardada = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(guardada.estado).toBe(201);
+    const detalle = await llamar('GET', `/partidas/${partida.partidaId}`, { usuario });
+    expect(detalle.json.registro.version).toBe(5);
+    expect(detalle.json.registro.eventos.find((e) => e.tipo === 'ataqueJefe').efecto.tipo).toBe('sinRetirada');
+  });
+
+  test('rechaza en v5 un efecto de ataque desconocido', async () => {
+    const usuario = '64b000000000000000000007';
+    const partida = {
+      ...structuredClone(ejemploV5),
+      partidaId: 'v5-efecto-malo',
+      cuentas: [usuario, ...ejemploV5.cuentas.slice(1)],
+    };
+    partida.eventos.find((e) => e.tipo === 'ataqueJefe').efecto = { tipo: 'bailar' };
     const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
     expect(r.estado).toBe(400);
   });
