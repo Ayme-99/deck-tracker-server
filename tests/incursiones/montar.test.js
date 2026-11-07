@@ -4,6 +4,7 @@ const montarIncursiones = require('../../src/incursiones/montar');
 const { crearRepoMemoria } = require('../../src/incursiones');
 const ejemplo = require('./partida-v2.json');
 const ejemploV3 = require('./partida-v3.json');
+const ejemploV4 = require('./partida-v4.json');
 
 // El mismo JWT que usa el resto del servidor (middleware `protect`).
 const SECRETO = 'secreto-de-prueba';
@@ -91,6 +92,28 @@ describe('Incursiones montado en Deck Tracker', () => {
     const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
     expect(r.estado).toBe(400);
     expect(r.json.error).toBe('estructura_invalida');
+  });
+
+  test('guarda una partida v4 con un aliado tanque', async () => {
+    const usuario = '64b000000000000000000004';
+    const partida = { ...structuredClone(ejemploV4), cuentas: [usuario, ...ejemploV4.cuentas.slice(1)] };
+    const guardada = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(guardada.estado).toBe(201);
+    const detalle = await llamar('GET', `/partidas/${partida.partidaId}`, { usuario });
+    expect(detalle.json.registro.version).toBe(4);
+    expect(detalle.json.registro.eventos.find((e) => e.tipo === 'aliadoInvocado').categoria).toBe('tanque');
+  });
+
+  test('rechaza en v4 la categoría barrera, que ya no existe', async () => {
+    const usuario = '64b000000000000000000005';
+    const partida = {
+      ...structuredClone(ejemploV4),
+      partidaId: 'v4-con-barrera',
+      cuentas: [usuario, ...ejemploV4.cuentas.slice(1)],
+    };
+    partida.eventos.find((e) => e.tipo === 'aliadoInvocado').categoria = 'barrera';
+    const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(r.estado).toBe(400);
   });
 
   test('una cuenta que no juega la partida recibe 403', async () => {

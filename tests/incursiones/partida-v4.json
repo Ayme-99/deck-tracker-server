@@ -1,0 +1,171 @@
+{
+  "version": 4,
+  "partidaId": "ejemplo-v4-con-aliado",
+  "creadaEn": "2026-11-06T10:15:00+01:00",
+  "cuentas": [
+    "usuario-ana",
+    "usuario-bea",
+    null
+  ],
+  "eventos": [
+    {
+      "tipo": "configurarJugadores",
+      "jugadores": [
+        {
+          "nombre": "Ana",
+          "ataqueMaximo": 100
+        },
+        {
+          "nombre": "Bea",
+          "ataqueMaximo": 100
+        },
+        {
+          "nombre": "Cris",
+          "ataqueMaximo": 100
+        }
+      ]
+    },
+    {
+      "tipo": "elegirJefe",
+      "jefeId": "ejemplo-nv1",
+      "nombre": "Jefe de ejemplo",
+      "nivel": 1,
+      "hp": 1000,
+      "invocacionCadaHp": 300
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 0,
+      "dano": 350
+    },
+    {
+      "tipo": "aliadoInvocado",
+      "slot": 1,
+      "nombre": "Rattata",
+      "hp": 60,
+      "ataqueNombre": "Placaje",
+      "ataqueDano": 20,
+      "categoria": "tanque"
+    },
+    {
+      "tipo": "ataqueAliado",
+      "slot": 1,
+      "dano": 20
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 1,
+      "dano": 0
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 2,
+      "dano": 100
+    },
+    {
+      "tipo": "ataqueJefe",
+      "ranura": 1,
+      "dano": 60
+    },
+    {
+      "tipo": "ataqueAliado",
+      "slot": 1,
+      "dano": 20
+    },
+    {
+      "tipo": "pokemonKo",
+      "jugador": 1
+    },
+    {
+      "tipo": "finTurnoJefe"
+    },
+    {
+      "tipo": "cartaAnimoRobada",
+      "jugador": 1,
+      "carta": 4
+    },
+    {
+      "tipo": "ataqueAAliado",
+      "jugador": 1,
+      "slot": 1,
+      "dano": 60
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 0,
+      "dano": 100
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 2,
+      "dano": 100
+    },
+    {
+      "tipo": "sinInvocacion"
+    },
+    {
+      "tipo": "curacionJefe",
+      "cantidad": 50
+    },
+    {
+      "tipo": "ataqueJefe",
+      "ranura": 3,
+      "dano": 120,
+      "jugador": 2,
+      "alAzar": true
+    },
+    {
+      "tipo": "pokemonKo",
+      "jugador": 2
+    },
+    {
+      "tipo": "abandonar"
+    }
+  ],
+  "resumen": {
+    "jefeId": "ejemplo-nv1",
+    "nivel": 1,
+    "resultado": "derrota",
+    "danoTotal": 600,
+    "coeficienteY": 3,
+    "puntosTotal": 451,
+    "jugadores": [
+      {
+        "asiento": 0,
+        "nombre": "Ana",
+        "dano": 450,
+        "pokemonPerdidos": 0,
+        "puesto": 1,
+        "porcentaje": 40,
+        "puntos": 182,
+        "abonado": true,
+        "estadosAplicados": 0,
+        "bonoEstados": 0
+      },
+      {
+        "asiento": 2,
+        "nombre": "Cris",
+        "dano": 200,
+        "pokemonPerdidos": 1,
+        "puesto": 2,
+        "porcentaje": 33,
+        "puntos": 148,
+        "abonado": false,
+        "estadosAplicados": 0,
+        "bonoEstados": 0
+      },
+      {
+        "asiento": 1,
+        "nombre": "Bea",
+        "dano": 0,
+        "pokemonPerdidos": 1,
+        "puesto": 3,
+        "porcentaje": 27,
+        "puntos": 121,
+        "abonado": true,
+        "estadosAplicados": 0,
+        "bonoEstados": 0
+      }
+    ]
+  }
+}
