@@ -9,12 +9,12 @@ const addFormats = require('ajv-formats');
 const CARPETA_CONTRATO = [
   path.join(__dirname, '..', '..', 'contrato'),
   path.join(__dirname, 'contrato'),
-].find((c) => fs.existsSync(path.join(c, 'partida.v3.schema.json')))
+].find((c) => fs.existsSync(path.join(c, 'partida.v4.schema.json')))
   ?? path.join(__dirname, '..', '..', 'contrato');
 
 // Versiones del registro que entiende este servidor (contrato/README.md). Las
 // antiguas se siguen aceptando: hay clientes que aún las envían.
-const VERSIONES_SOPORTADAS = [1, 2, 3];
+const VERSIONES_SOPORTADAS = [1, 2, 3, 4];
 
 // Compila el esquema de cada versión. Devuelve (registro) → lista de errores
 // del esquema de la versión que declara el registro (vacía si es válido).
