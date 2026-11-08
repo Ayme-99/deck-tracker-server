@@ -1,6 +1,6 @@
-# Deck Tracker – Backend
+# TCGMasters – Servidor
 
-API REST para gestión de mazos de Pokémon TCG, seguimiento de partidas con estadísticas agregadas, torneos completos (tanto seguimiento del propio historial -**tracked**- como torneos alojados por la app con varios jugadores -**hosted**-), y sistema de amigos con invitaciones a torneos.
+API REST de TCGMasters con tres módulos (usuarios, Deck Tracker y TCG Raid Battles). Deck Tracker: gestión de mazos de Pokémon TCG, seguimiento de partidas con estadísticas agregadas, torneos completos (tanto seguimiento del propio historial -**tracked**- como torneos alojados por la app con varios jugadores -**hosted**-), y sistema de amigos con invitaciones a torneos.
 
 ## Stack
 
@@ -14,66 +14,39 @@ https://deck-tracker-server.onrender.com/api
 
 ## Estructura del proyecto
 
+El servidor es **uno solo** (un único proceso y una única base de MongoDB) pero el código está separado en tres módulos bajo `src/modules/`. `src/app.js` solo monta las rutas de cada uno.
+
 ```
 src/
-├── app.js
+├── app.js                      # arranque: CORS, JSON, health y montaje de los tres módulos
 ├── config/
-│ └── db.js
-├── models/
-│ ├── Deck.js
-│ ├── Match.js
-│ ├── OpponentArchetype.js
-│ ├── Tournament.js
-│ ├── TournamentPlayer.js # modo hosted: inscripcion de jugador; linkedUserId + role (admin/guest) si esta vinculado a una cuenta amiga
-│ ├── TournamentMatch.js # modo hosted: partida entre dos TournamentPlayer
-│ ├── TournamentInvite.js # invitacion pendiente a un torneo hosted propio
-│ ├── FriendRequest.js # relacion de amistad entre dos cuentas (pending/accepted/rejected/blocked)
-│ └── User.js
-├── controllers/
-│ ├── authController.js
-│ ├── deckController.js
-│ ├── matchController.js
-│ ├── opponentArchetypeController.js
-│ ├── pokemonController.js
-│ ├── statsController.js
-│ ├── friendController.js # amigos: buscar, solicitar, aceptar/rechazar, listar, eliminar, bloquear
-│ ├── tournamentInviteController.js # invitar a un amigo a un torneo hosted propio
-│ └── tournament/ # torneos, dividido por responsabilidad
-│   ├── tournamentCrudController.js # crear/editar/eliminar, resumen, standing manual
-│   ├── tournamentPlayerController.js # gestion de jugadores (modo hosted)
-│   ├── tournamentSwissController.js # rondas suizas
-│   ├── tournamentEliminationController.js # bracket, avance de fase, entrada desde suiza/grupos
-│   ├── tournamentGroupsLeagueController.js # grupos y liga
-│   ├── tournamentResultsController.js # resultados de partidas hosted, clasificacion
-│   └── tournamentTransferController.js # exportar/importar
-├── routes/
-│ ├── authRoutes.js
-│ ├── deckRoutes.js
-│ ├── matchRoutes.js
-│ ├── opponentArchetypeRoutes.js
-│ ├── pokemonRoutes.js
-│ ├── statsRoutes.js
-│ ├── tournamentRoutes.js
-│ ├── friendRoutes.js
-│ └── tournamentInviteRoutes.js
-├── services/
-│ ├── pokeapiService.js
-│ ├── swissPairingService.js # logica pura de emparejamiento suizo
-│ ├── eliminationPairingService.js # logica pura de bracket (seeding, fases, byes)
-│ ├── groupsEliminationService.js # reparto en grupos + entrada a eliminatoria
-│ ├── roundRobinService.js # calendario todos-contra-todos (grupos y liga)
-│ ├── tiebreakerService.js # calculo de OMW%
-│ └── tournamentAccessService.js # permisos de lectura compartida (dueño + jugador invitado vinculado)
-├── middleware/
-│ ├── authMiddleware.js
-│ └── rateLimitMiddleware.js
-├── scripts/
-│ └── cleanupOrphanMatches.js # one-off: limpieza de partidas huérfanas (issue #31)
-└── tests/
-  ├── models/
-  ├── services/
-  └── controllers/
+│   └── db.js                   # conexión a MongoDB (compartida)
+└── modules/
+    ├── usuarios/               # cuentas, sesión y amistades
+    │   ├── models/             # User, FriendRequest (pending/accepted/rejected/blocked)
+    │   ├── controllers/        # authController, friendController
+    │   ├── routes/             # /api/auth, /api/friends
+    │   ├── middleware/         # authMiddleware (JWT, `protect`), rateLimitMiddleware
+    │   └── services/           # emailService
+    ├── deck-tracker/           # mazos, partidas, estadísticas y torneos
+    │   ├── models/             # Deck, Match, OpponentArchetype, Tournament, TournamentPlayer, TournamentMatch, TournamentInvite
+    │   ├── controllers/        # deck, match, stats, pokemon, cardCatalog, opponentArchetype, tournamentInvite y tournament/ (por responsabilidad)
+    │   ├── routes/             # /api/decks, /matches, /stats, /pokemon, /cards, /opponent-archetypes, /tournaments, /tournament-invites
+    │   └── services/           # emparejamientos (suizo, eliminatoria, grupos, liga), desempates, pokeapi, tcgdex, deckStats, acceso a torneos
+    └── tcg-raid-battles/       # Game Master de Incursiones (/api/incursiones)
+        ├── montar.js           # único archivo propio de este repo (pegamento con usuarios y MongoDB)
+        └── ...                 # resto vendorizado desde TCG-Raid-Battles (ver ORIGEN.md)
+scripts/                        # one-off: cleanupOrphanMatches.js (issue #31)
+tests/                          # refleja los módulos: usuarios/, deck-tracker/, tcg-raid-battles/
 ```
+
+### Dependencias entre módulos
+
+- `usuarios` es la base: `authMiddleware` (`protect`) y el modelo `User` los usan los otros dos módulos.
+- `deck-tracker` usa `User` y `FriendRequest` (invitaciones a torneo) de `usuarios`.
+- `usuarios` conoce datos de `deck-tracker` en dos sitios: el borrado en cascada de una cuenta (`authController`) y las estadísticas de mazos de un amigo (`friendController`).
+- `tcg-raid-battles` solo depende de `usuarios` (`protect` y `User`).
+- Los modelos se importan siempre por ruta directa; evita añadir dependencias nuevas entre `usuarios` y `deck-tracker` sin necesidad.
 
 ## Variables de entorno
 
@@ -259,8 +232,8 @@ Ambos comparten 5 estructuras posibles (`structure`): `swiss`, `swiss_eliminatio
 
 Backend del Game Master de Incursiones (repo [TCG-Raid-Battles](https://github.com/Ayme-99/TCG-Raid-Battles)). Reutiliza las cuentas, el JWT y la base de este servidor; no hay servicio aparte.
 
-- `src/incursiones/` es el módulo **tal como sale del otro repo**: no se edita aquí (ver `ORIGEN.md`). Se actualiza con `node server/scripts/exportar.js <este repo>/src/incursiones` desde TCG-Raid-Battles.
-- `src/incursiones/montar.js` es lo único propio de Deck Tracker: usa `protect` (el id sale de `req.userId`), comprueba las cuentas contra el modelo `User` y crea el repositorio de MongoDB, con sus índices, en la primera petición.
+- `src/modules/tcg-raid-battles/` es el módulo **tal como sale del otro repo**: no se edita aquí (ver `ORIGEN.md`). Se actualiza con `node server/scripts/exportar.js <este repo>/src/modules/tcg-raid-battles` desde TCG-Raid-Battles.
+- `src/modules/tcg-raid-battles/montar.js` es lo único propio de Deck Tracker: usa `protect` (el id sale de `req.userId`), comprueba las cuentas contra el modelo `User` y crea el repositorio de MongoDB, con sus índices, en la primera petición.
 - Colecciones nuevas: `incursiones_partidas` e `incursiones_partida_jugadores`.
 - El cuerpo de estas rutas admite hasta 1 MB (un registro de partida lleva todos los eventos).
 

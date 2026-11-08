@@ -2,8 +2,8 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('../src/config/db');
-const Deck = require('../src/models/Deck');
-const Match = require('../src/models/Match');
+const Deck = require('../src/modules/deck-tracker/models/Deck');
+const Match = require('../src/modules/deck-tracker/models/Match');
 
 async function run() {
   await connectDB();
