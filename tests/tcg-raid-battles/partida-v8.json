@@ -1,0 +1,119 @@
+{
+  "version": 8,
+  "partidaId": "ejemplo-victoria-por-estados",
+  "creadaEn": "2026-11-06T18:00:00Z",
+  "cuentas": [
+    "usuario-ana",
+    null
+  ],
+  "eventos": [
+    {
+      "tipo": "configurarJugadores",
+      "jugadores": [
+        {
+          "nombre": "Ana",
+          "ataqueMaximo": 100
+        },
+        {
+          "nombre": "Bea",
+          "ataqueMaximo": 100
+        }
+      ]
+    },
+    {
+      "tipo": "elegirJefe",
+      "jefeId": "ejemplo-nv1",
+      "nombre": "Jefe de ejemplo",
+      "nivel": 1,
+      "hp": 200
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 0,
+      "dano": 40
+    },
+    {
+      "tipo": "aplicarEstadoJefe",
+      "jugador": 0,
+      "estado": "veneno"
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 1,
+      "dano": 30
+    },
+    {
+      "tipo": "aplicarEstadoJefe",
+      "jugador": 1,
+      "estado": "quemadura"
+    },
+    {
+      "tipo": "ataqueJefe",
+      "ranura": 1,
+      "dano": 20
+    },
+    {
+      "tipo": "finTurnoJefe",
+      "monedaQuemadura": true
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 0,
+      "dano": 50
+    },
+    {
+      "tipo": "turnoJugador",
+      "jugador": 1,
+      "dano": 30
+    },
+    {
+      "tipo": "aplicarEstadoJefe",
+      "jugador": 1,
+      "estado": "quemadura"
+    },
+    {
+      "tipo": "ataqueJefe",
+      "ranura": 2,
+      "dano": 30,
+      "jugador": 1
+    },
+    {
+      "tipo": "finTurnoJefe",
+      "monedaQuemadura": false
+    }
+  ],
+  "resumen": {
+    "jefeId": "ejemplo-nv1",
+    "nivel": 1,
+    "resultado": "victoria",
+    "danoTotal": 200,
+    "coeficienteY": 15.0,
+    "puntosTotal": 3000,
+    "jugadores": [
+      {
+        "asiento": 0,
+        "nombre": "Ana",
+        "dano": 90,
+        "pokemonPerdidos": 0,
+        "puesto": 1,
+        "porcentaje": 55,
+        "puntos": 1650,
+        "estadosAplicados": 1,
+        "bonoEstados": 30,
+        "abonado": true
+      },
+      {
+        "asiento": 1,
+        "nombre": "Bea",
+        "dano": 60,
+        "pokemonPerdidos": 0,
+        "puesto": 2,
+        "porcentaje": 45,
+        "puntos": 1350,
+        "estadosAplicados": 2,
+        "bonoEstados": 60,
+        "abonado": false
+      }
+    ]
+  }
+}

@@ -6,6 +6,7 @@ const ejemplo = require('./partida-v2.json');
 const ejemploV3 = require('./partida-v3.json');
 const ejemploV4 = require('./partida-v4.json');
 const ejemploV5 = require('./partida-v5.json');
+const ejemploV8 = require('./partida-v8.json');
 
 // El mismo JWT que usa el resto del servidor (middleware `protect`).
 const SECRETO = 'secreto-de-prueba';
@@ -137,6 +138,33 @@ describe('Incursiones montado en Deck Tracker', () => {
     partida.eventos.find((e) => e.tipo === 'ataqueJefe').efecto = { tipo: 'bailar' };
     const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
     expect(r.estado).toBe(400);
+  });
+
+  test('guarda una partida v8 (daño por efectos)', async () => {
+    const usuario = '64b000000000000000000008';
+    const partida = {
+      ...structuredClone(ejemploV8),
+      partidaId: 'ejemplo-v8-victoria',
+      cuentas: [usuario, ...ejemploV8.cuentas.slice(1)],
+    };
+    const guardada = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+    expect(guardada.estado).toBe(201);
+    const detalle = await llamar('GET', `/partidas/${partida.partidaId}`, { usuario });
+    expect(detalle.json.registro.version).toBe(8);
+  });
+
+  test('rechaza en v8 un danoDeEfecto sin objetivo o con dos', async () => {
+    const usuario = '64b000000000000000000009';
+    for (const [id, extra] of [['v8-sin-objetivo', {}], ['v8-dos-objetivos', { jugador: 0, slot: 1 }]]) {
+      const partida = {
+        ...structuredClone(ejemploV8),
+        partidaId: id,
+        cuentas: [usuario, ...ejemploV8.cuentas.slice(1)],
+      };
+      partida.eventos.splice(3, 0, { tipo: 'danoDeEfecto', puntos: 10, ...extra });
+      const r = await llamar('POST', '/partidas', { usuario, cuerpo: partida });
+      expect(r.estado).toBe(400);
+    }
   });
 
   test('una cuenta que no juega la partida recibe 403', async () => {
