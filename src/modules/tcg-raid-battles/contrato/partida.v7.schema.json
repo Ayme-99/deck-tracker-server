@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Ayme-99/TCG-Raid-Battles/contrato/partida.v7.schema.json",
+  "title": "Registro de partida de Incursiones (versión 6)",
+  "description": "Valida la estructura. Que los eventos cumplan las reglas del juego lo comprueba el motor (engine), no este esquema.",
+  "type": "object",
+  "required": ["version", "partidaId", "eventos"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 7 },
+    "partidaId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "creadaEn": { "type": "string", "format": "date-time" },
+    "cuentas": {
+      "description": "Id de cuenta por asiento; null es un invitado (juega sin cuenta y no cobra).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": { "type": ["string", "null"], "minLength": 1 }
+    },
+    "eventos": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/evento" }
+    },
+    "resumen": { "$ref": "#/$defs/resumen" }
+  },
+  "$defs": {
+    "asiento": { "type": "integer", "minimum": 0, "maximum": 3 },
+    "entero0": { "type": "integer", "minimum": 0 },
+    "texto": { "type": "string", "minLength": 1 },
+
+    "evento": {
+      "oneOf": [
+        { "$ref": "#/$defs/configurarJugadores" },
+        { "$ref": "#/$defs/elegirJefe" },
+        { "$ref": "#/$defs/turnoJugador" },
+        { "$ref": "#/$defs/ataqueJefe" },
+        { "$ref": "#/$defs/pokemonKo" },
+        { "$ref": "#/$defs/cartaAnimoRobada" },
+        { "$ref": "#/$defs/finTurnoJefe" },
+        { "$ref": "#/$defs/aplicarEstadoJefe" },
+        { "$ref": "#/$defs/abandonar" },
+        { "$ref": "#/$defs/curacionJefe" },
+        { "$ref": "#/$defs/ataqueAAliado" },
+        { "$ref": "#/$defs/sinInvocacion" },
+        { "$ref": "#/$defs/aliadoInvocado" },
+        { "$ref": "#/$defs/ataqueAliado" }
+      ]
+    },
+
+    "configurarJugadores": {
+      "type": "object",
+      "required": ["tipo", "jugadores"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "configurarJugadores" },
+        "jugadores": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["nombre", "ataqueMaximo"],
+            "additionalProperties": false,
+            "properties": {
+              "nombre": { "$ref": "#/$defs/texto" },
+              "ataqueMaximo": { "$ref": "#/$defs/entero0" }
+            }
+          }
+        }
+      }
+    },
+    "elegirJefe": {
+      "type": "object",
+      "required": ["tipo", "nombre", "nivel", "hp"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "elegirJefe" },
+        "jefeId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "nombre": { "$ref": "#/$defs/texto" },
+        "nivel": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "hp": { "type": "integer", "minimum": 1 },
+        "invocacionCadaHp": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "turnoJugador": {
+      "type": "object",
+      "required": ["tipo", "jugador", "dano"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "turnoJugador" },
+        "jugador": { "$ref": "#/$defs/asiento" },
+        "dano": { "$ref": "#/$defs/entero0" }
+      }
+    },
+    "ataqueJefe": {
+      "type": "object",
+      "required": ["tipo", "ranura", "dano"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "ataqueJefe" },
+        "ranura": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "dano": { "$ref": "#/$defs/entero0" },
+        "jugador": { "$ref": "#/$defs/asiento" },
+        "alAzar": { "type": "boolean" },
+        "efecto": { "$ref": "#/$defs/efectoAtaque" }
+      }
+    },
+    "efectoAtaque": {
+      "description": "Efecto de un ataque del jefe (D-14). Qué campos necesita cada tipo lo comprueba el motor.",
+      "type": "object",
+      "required": ["tipo"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": {
+          "enum": [
+            "sinRetirada",
+            "sinAtaque",
+            "paralizarDefensor",
+            "ignoraEfectos",
+            "danoExtraSi",
+            "danoPorAtaquePrevio",
+            "contadorATodos",
+            "autodano"
+          ]
+        },
+        "valor": { "type": "integer", "minimum": 1 },
+        "duracion": { "type": "integer", "minimum": 1 },
+        "moneda": { "type": "boolean" }
+      }
+    },
+    "pokemonKo": {
+      "type": "object",
+      "required": ["tipo", "jugador"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "pokemonKo" },
+        "jugador": { "$ref": "#/$defs/asiento" }
+      }
+    },
+    "cartaAnimoRobada": {
+      "type": "object",
+      "required": ["tipo", "jugador", "carta"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "cartaAnimoRobada" },
+        "jugador": { "$ref": "#/$defs/asiento" },
+        "carta": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "finTurnoJefe": {
+      "type": "object",
+      "required": ["tipo"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "finTurnoJefe" },
+        "monedaQuemadura": {
+          "description": "true = cara (se quita la quemadura), false = cruz. Obligatoria si el jefe está quemado (lo comprueba el motor).",
+          "type": "boolean"
+        }
+      }
+    },
+    "aplicarEstadoJefe": {
+      "type": "object",
+      "required": ["tipo", "jugador", "estado"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "aplicarEstadoJefe" },
+        "jugador": { "$ref": "#/$defs/asiento" },
+        "estado": { "enum": ["veneno", "quemadura"] }
+      }
+    },
+    "abandonar": {
+      "type": "object",
+      "required": ["tipo"],
+      "additionalProperties": false,
+      "properties": { "tipo": { "const": "abandonar" } }
+    },
+    "curacionJefe": {
+      "type": "object",
+      "required": ["tipo", "cantidad"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "curacionJefe" },
+        "cantidad": { "$ref": "#/$defs/entero0" }
+      }
+    },
+    "ataqueAAliado": {
+      "type": "object",
+      "required": ["tipo", "jugador", "slot", "dano"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "ataqueAAliado" },
+        "jugador": { "$ref": "#/$defs/asiento" },
+        "slot": { "$ref": "#/$defs/asiento" },
+        "dano": { "$ref": "#/$defs/entero0" }
+      }
+    },
+    "sinInvocacion": {
+      "type": "object",
+      "required": ["tipo"],
+      "additionalProperties": false,
+      "properties": { "tipo": { "const": "sinInvocacion" } }
+    },
+    "aliadoInvocado": {
+      "type": "object",
+      "required": ["tipo", "slot", "categoria", "nombre", "hp"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "aliadoInvocado" },
+        "slot": { "$ref": "#/$defs/asiento" },
+        "categoria": { "enum": ["danio", "tanque", "cura", "control", "potenciador", "debilitador"] },
+        "nombre": { "$ref": "#/$defs/texto" },
+        "hp": { "type": "integer", "minimum": 1 },
+        "ataqueNombre": { "$ref": "#/$defs/texto" },
+        "ataqueDano": { "$ref": "#/$defs/entero0" },
+        "habilidad": { "$ref": "#/$defs/texto" },
+        "efectos": {
+          "description": "Quién aplica los efectos de la carta: el jugador (por defecto, no se escribe) o el programa, con el script de scriptId.",
+          "enum": ["jugador", "programa"]
+        },
+        "scriptId": { "$ref": "#/$defs/texto" },
+        "monedas": {
+          "description": "Monedas que lanza la app al entrar el aliado, en orden (true = cara), para los scripts que las usan (Deseo).",
+          "type": "array",
+          "items": { "type": "boolean" }
+        }
+      }
+    },
+    "ataqueAliado": {
+      "type": "object",
+      "required": ["tipo", "slot", "dano"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "ataqueAliado" },
+        "slot": { "$ref": "#/$defs/asiento" },
+        "dano": { "$ref": "#/$defs/entero0" },
+        "objetivo": { "$ref": "#/$defs/asiento" },
+        "moneda": {
+          "description": "Resultado de la moneda del jugador rival si el ataque la lleva (Fuerza Lunar): true = cara, false = cruz.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "resumen": {
+      "description": "Puntos de la partida, calculados al cerrarla con las tablas vigentes (D-10).",
+      "type": "object",
+      "required": ["nivel", "resultado", "danoTotal", "coeficienteY", "puntosTotal", "jugadores"],
+      "additionalProperties": false,
+      "properties": {
+        "jefeId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "nivel": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "resultado": { "enum": ["victoria", "derrota"] },
+        "danoTotal": { "$ref": "#/$defs/entero0" },
+        "coeficienteY": { "type": "number", "exclusiveMinimum": 0 },
+        "puntosTotal": { "$ref": "#/$defs/entero0" },
+        "jugadores": {
+          "description": "Por puesto: el primero es el puesto 1.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["asiento", "nombre", "dano", "pokemonPerdidos", "puesto", "porcentaje", "puntos", "estadosAplicados", "bonoEstados", "abonado"],
+            "additionalProperties": false,
+            "properties": {
+              "asiento": { "$ref": "#/$defs/asiento" },
+              "nombre": { "$ref": "#/$defs/texto" },
+              "dano": { "$ref": "#/$defs/entero0" },
+              "pokemonPerdidos": { "type": "integer", "minimum": 0, "maximum": 2 },
+              "puesto": { "type": "integer", "minimum": 1, "maximum": 4 },
+              "porcentaje": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "puntos": { "$ref": "#/$defs/entero0" },
+              "estadosAplicados": { "$ref": "#/$defs/entero0" },
+              "bonoEstados": { "$ref": "#/$defs/entero0" },
+              "abonado": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
